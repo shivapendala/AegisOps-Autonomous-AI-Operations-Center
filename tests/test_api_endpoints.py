@@ -96,3 +96,48 @@ def test_api_incidents_endpoint(client, db_session):
     assert "recommendations" in incident
     assert len(incident["events"]) > 0
     assert len(incident["recommendations"]) > 0
+
+
+def test_post_alert_auto_correlates_incident(client, db_session):
+    """Verify that posting alerts via HTTP automatically creates and merges incidents."""
+    # 1. Post CPU alert -> Creates Incident #1
+    alert1_payload = {
+        "service": "Payment API",
+        "metric": "CPU",
+        "value": 94.0,
+        "threshold": 80.0,
+        "severity": "HIGH",
+        "message": "Payment API CPU usage reached 94%",
+    }
+    resp1 = client.post("/api/alerts", json=alert1_payload)
+    assert resp1.status_code == 201
+    alert1_id = resp1.json()["id"]
+
+    # Check incidents list
+    inc_resp1 = client.get("/api/incidents")
+    assert inc_resp1.status_code == 200
+    incidents_after_1 = inc_resp1.json()
+    inc1 = next((i for i in incidents_after_1 if i["service_name"] == "Payment API" or "Payment API" in i["title"]), None)
+    assert inc1 is not None
+    inc1_id = inc1["id"]
+
+    # 2. Post DB Connections alert -> Correlated into existing Incident #1
+    alert2_payload = {
+        "service": "Payment API",
+        "metric": "DB Connections",
+        "value": 96.0,
+        "threshold": 85.0,
+        "severity": "HIGH",
+        "message": "Payment API DB connections at 96%",
+    }
+    resp2 = client.post("/api/alerts", json=alert2_payload)
+    assert resp2.status_code == 201
+
+    # Check incident was updated, not duplicated
+    inc_resp2 = client.get(f"/api/incidents/{inc1_id}")
+    assert inc_resp2.status_code == 200
+    inc_data2 = inc_resp2.json()
+    assert "CPU" in inc_data2["affected_metrics"]
+    assert "DB Connections" in inc_data2["affected_metrics"]
+    assert len(inc_data2["events"]) >= 2
+

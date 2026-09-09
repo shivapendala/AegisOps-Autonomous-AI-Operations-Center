@@ -609,6 +609,7 @@ class SimulationEngine:
                     ))
 
             # 2. Persist new alerts
+            persisted_alerts = []
             for a in alerts:
                 alert_model = AlertModel(
                     service_id=a.get("service_id"),
@@ -623,6 +624,8 @@ class SimulationEngine:
                     timestamp=a["timestamp"],
                 )
                 db.add(alert_model)
+                persisted_alerts.append(alert_model)
+            db.flush()
 
             # 3. Persist correlated incidents
             for c_inc in incidents:
@@ -637,6 +640,18 @@ class SimulationEngine:
                     existing.affected_metrics = c_inc.affected_metrics
                     existing.affected_events = c_inc.affected_events
                     existing.updated_at = c_inc.updated_at
+                    for a_mod in persisted_alerts:
+                        if a_mod.service == c_inc.service and a_mod.metric in c_inc.affected_metrics:
+                            evt = IncidentEventModel(
+                                incident_id=c_inc.id,
+                                alert_id=a_mod.id,
+                                event_type="ALERT_ATTACHED",
+                                description=f"[DEMO/SIMULATION] Alert #{a_mod.id} ({a_mod.metric}) added to incident {c_inc.id}",
+                                actor="EventCorrelationEngine",
+                                event_data={"metric": a_mod.metric, "value": a_mod.value},
+                                created_at=c_inc.updated_at,
+                            )
+                            db.add(evt)
                 else:
                     new_db_inc = IncidentModel(
                         id=c_inc.id,
@@ -663,6 +678,18 @@ class SimulationEngine:
                         created_at=c_inc.created_at,
                     )
                     db.add(initial_evt)
+                    for a_mod in persisted_alerts:
+                        if a_mod.service == c_inc.service and a_mod.metric in c_inc.affected_metrics:
+                            evt = IncidentEventModel(
+                                incident_id=c_inc.id,
+                                alert_id=a_mod.id,
+                                event_type="ALERT_ATTACHED",
+                                description=f"[DEMO/SIMULATION] Alert #{a_mod.id} ({a_mod.metric}) added to incident {c_inc.id}",
+                                actor="EventCorrelationEngine",
+                                event_data={"metric": a_mod.metric, "value": a_mod.value},
+                                created_at=c_inc.created_at,
+                            )
+                            db.add(evt)
                     db.commit()
 
                     # Trigger RCA on new incident

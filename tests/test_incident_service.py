@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit tests for backend/incidents correlation and incident service.
 Tests:
 - find_recent_alerts()
@@ -134,3 +134,89 @@ def test_incident_service_correlate_alert_db_flow(db_session):
 
     cls = IncidentService.close_incident(db_session, master_id, operator="Lead SRE", closure_notes="Closed post-mortem")
     assert cls.status == "CLOSED"
+
+
+def test_automatic_incident_creation_and_merging_step5(db_session):
+    """
+    STEP 5 Verification:
+    When a new alert arrives:
+      New Alert -> Correlation Engine -> Check existing incidents -> Related incident found?
+      If YES -> Add alert to existing incident (Incident #1: CPU + DB + Latency)
+      If NO -> Create new incident (Incident #2: Auth Service Disk)
+    """
+    now = datetime.now(timezone.utc)
+    service = IncidentService(window_seconds=60, threshold_score=60.0)
+
+    # 1. Alert 1 arrives: CPU Alert
+    alert_cpu = {
+        "id": 101,
+        "service": "payment-processor",
+        "metric": "CPU",
+        "value": 92.5,
+        "severity": "HIGH",
+        "timestamp": now,
+    }
+    inc_1, is_new_1, score_1 = service.correlate_alert(db_session, alert_cpu)
+    assert is_new_1 is True, "First alert should create a new incident"
+    inc_1_id = inc_1.id
+
+    # 2. Alert 2 arrives: DB Alert (same service, 10s later)
+    alert_db = {
+        "id": 102,
+        "service": "payment-processor",
+        "metric": "DB Connections",
+        "value": 95.0,
+        "severity": "HIGH",
+        "timestamp": now + timedelta(seconds=10),
+    }
+    inc_2, is_new_2, score_2 = service.correlate_alert(db_session, alert_db)
+    assert is_new_2 is False, "DB alert should be merged into existing incident"
+    assert inc_2.id == inc_1_id, "Should merge into the first incident"
+    assert score_2 >= 60.0
+
+    # 3. Alert 3 arrives: Latency Alert (same service, 20s later)
+    alert_latency = {
+        "id": 103,
+        "service": "payment-processor",
+        "metric": "API Latency",
+        "value": 3.2,
+        "severity": "HIGH",
+        "timestamp": now + timedelta(seconds=20),
+    }
+    inc_3, is_new_3, score_3 = service.correlate_alert(db_session, alert_latency)
+    assert is_new_3 is False, "Latency alert should be merged into existing incident"
+    assert inc_3.id == inc_1_id, "Should merge into Incident #1"
+    assert score_3 >= 60.0
+
+    # Verify Incident #1 has 3 linked events in incident_events table
+    events_inc1 = (
+        db_session.query(IncidentEventModel)
+        .filter(IncidentEventModel.incident_id == inc_1_id)
+        .order_by(IncidentEventModel.id)
+        .all()
+    )
+    assert len(events_inc1) == 3
+    assert [e.alert_id for e in events_inc1] == [101, 102, 103]
+
+    # 4. Alert 4 arrives: Unrelated service and metric (notification-service network drop)
+    alert_network = {
+        "id": 201,
+        "service": "notification-service",
+        "metric": "network_packet_drop",
+        "value": 15.0,
+        "severity": "HIGH",
+        "timestamp": now + timedelta(seconds=25),
+    }
+    inc_4, is_new_4, score_4 = service.correlate_alert(db_session, alert_network)
+    assert is_new_4 is True, "Unrelated alert should spawn a NEW incident"
+    assert inc_4.id != inc_1_id, "Incident ID must be distinct"
+
+    # Verify Incident #2 has 1 linked event
+    events_inc2 = (
+        db_session.query(IncidentEventModel)
+        .filter(IncidentEventModel.incident_id == inc_4.id)
+        .all()
+    )
+    assert len(events_inc2) == 1
+    assert events_inc2[0].alert_id == 201
+
