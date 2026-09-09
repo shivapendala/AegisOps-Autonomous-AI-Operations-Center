@@ -155,7 +155,13 @@ class IncidentInvestigator:
         now = datetime.now(timezone.utc)
         inc.probable_cause = analysis.probable_root_cause
         inc.root_cause = analysis.probable_root_cause
-        inc.confidence_score = analysis.confidence_score
+        
+        # Store confidence score as percentage (e.g. 91)
+        conf = analysis.confidence_score
+        if conf <= 1.0:
+            conf = conf * 100.0
+        inc.confidence_score = round(conf, 1)
+
         inc.impact_summary = analysis.impact_summary or inc.impact_summary
 
         meta = dict(inc.metadata_json or {})

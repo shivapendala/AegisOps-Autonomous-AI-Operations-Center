@@ -107,7 +107,7 @@ class MockAIProvider(AIProvider):
 
         if (is_payment_api and (has_db or has_latency)) or (has_db and (has_latency or has_http_500)):
             probable_cause = "Database connection pool exhaustion"
-            confidence = 0.91
+            confidence = 91.0
             reasoning = (
                 "Observed database connection pool saturation leading to incoming query queuing. "
                 "Downstream worker threads blocked waiting for database connections, causing API latency "
@@ -115,9 +115,12 @@ class MockAIProvider(AIProvider):
             )
             evidence = [
                 f"DB connections reached {db_val:.0f}%",
+                f"Database connections increased to {db_val:.0f}%",
                 f"API latency increased to {lat_val:.1f} seconds",
+                f"API latency increased from 200ms to {lat_val:.1f}s",
                 "HTTP 500 errors increased",
                 "Payment requests timed out",
+                "CPU increased after database saturation",
             ]
             recommended_actions = [
                 "Increase database connection pool and investigate long-running queries.",
@@ -126,7 +129,7 @@ class MockAIProvider(AIProvider):
                 "Restart stale database connection worker pool",
                 "Enable query caching on payment transaction ledger",
             ]
-            impact = "Critical degradation in transaction processing; ~18% payment request failure rate."
+            impact = f"{svc_str or 'Payment API'} requests are experiencing failures because database connections are saturated."
 
         # 2. High CPU Saturation
         elif has_cpu and not has_db:
