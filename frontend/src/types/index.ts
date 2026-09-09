@@ -111,6 +111,30 @@ export interface HealthStatus {
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
+export interface SimulatedService {
+  service_name: string;
+  service_id?: number;
+  latency: number;
+  request_rate: number;
+  error_rate: number;
+  cpu: number;
+  memory: number;
+  database_connections: number;
+  status: 'HEALTHY' | 'DEGRADED' | 'CRITICAL';
+  is_simulation: boolean;
+  label: string;
+  timestamp: string;
+}
+
+export interface SimulationStatus {
+  active_scenario: string;
+  scenario_start_time: string;
+  active_simulated_alerts: number;
+  services: SimulatedService[];
+  is_simulation: boolean;
+  label: string;
+}
+
 export interface WebSocketEvent {
   type:
     | 'INITIAL_STATE'
@@ -119,6 +143,7 @@ export interface WebSocketEvent {
     | 'ALERT_RESOLVED'
     | 'INCIDENT_UPDATE'
     | 'SERVICE_STATUS_CHANGE'
+    | 'SIMULATION_UPDATE'
     | 'PONG';
   data?: any;
   timestamp?: string;
