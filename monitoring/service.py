@@ -263,6 +263,17 @@ class MonitoringService:
                             created_at=c_inc.created_at,
                         )
                         db.add(initial_evt)
+                        db.commit()
+
+                        # Run automated AI Root Cause Analysis against the incident
+                        try:
+                            from aegisops.ai.rca import IncidentInvestigator
+                            investigator = IncidentInvestigator()
+                            rca_res = investigator.investigate_sync(c_inc.id, db, persist=True)
+                            if rca_res:
+                                c_inc.probable_cause = rca_res.probable_root_cause
+                        except Exception as rca_err:
+                            logger.debug("Automatic RCA investigation failed: %s", rca_err)
 
             db.commit()
         except Exception as exc:

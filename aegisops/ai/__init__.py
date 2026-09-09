@@ -6,6 +6,15 @@ from .llm_service import (
     OpenAILLMService,
     get_llm_service,
 )
+from .rca import (
+    AIProvider,
+    LLMProvider,
+    MockAIProvider,
+    IncidentInvestigation,
+    RootCauseAnalysisResult,
+    IncidentInvestigator,
+    get_ai_provider,
+)
 
 __all__ = [
     "AnomalyDetector",
@@ -13,4 +22,11 @@ __all__ = [
     "MockLLMService",
     "OpenAILLMService",
     "get_llm_service",
+    "AIProvider",
+    "LLMProvider",
+    "MockAIProvider",
+    "IncidentInvestigation",
+    "RootCauseAnalysisResult",
+    "IncidentInvestigator",
+    "get_ai_provider",
 ]

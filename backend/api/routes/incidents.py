@@ -203,3 +203,38 @@ async def resolve_incident(
         logger.debug("Failed to broadcast resolved incident: %s", exc)
 
     return inc
+
+
+@router.post("/{incident_id}/analyze", summary="Trigger AI Root Cause Analysis")
+async def trigger_incident_rca(
+    incident_id: str,
+    db: Session = Depends(get_sync_db),
+):
+    """
+    Executes automated AI Root Cause Analysis on the specified incident.
+    Aggregates incident info, correlated alerts, recent metrics, service info, and logs,
+    invokes the AI provider (MockAIProvider or LLMProvider), and persists the findings.
+    """
+    from aegisops.ai.rca import IncidentInvestigator
+    inc = db.query(IncidentModel).filter(IncidentModel.id == incident_id).first()
+    if not inc:
+        raise ResourceNotFoundError("Incident", incident_id)
+
+    investigator = IncidentInvestigator()
+    analysis = await investigator.investigate(incident_id=incident_id, db=db, persist=True)
+    if not analysis:
+        raise ResourceNotFoundError("Incident Context", incident_id)
+
+    db.refresh(inc)
+
+    try:
+        from backend.core.websocket_manager import ws_manager
+        await ws_manager.broadcast_incident(inc.to_dict(), event_type="INCIDENT_UPDATE")
+    except Exception as exc:
+        logger.debug("Failed to broadcast analyzed incident: %s", exc)
+
+    return {
+        "incident_id": incident_id,
+        "analysis": analysis.to_dict(),
+        "incident": inc.to_dict(include_relations=True),
+    }
