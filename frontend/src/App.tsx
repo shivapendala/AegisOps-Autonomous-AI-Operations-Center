@@ -1,18 +1,30 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Cpu, Server, HardDrive, Layers, AlertOctagon, CheckCircle, Database } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Cpu, Server, HardDrive, Layers } from 'lucide-react';
 import { Navbar } from './components/Navbar';
 import { MetricCard } from './components/MetricCard';
 import { LiveChart } from './components/LiveChart';
+import { AlertFeed } from './components/AlertFeed';
+import { ServicesCatalog } from './components/ServicesCatalog';
 import { IncidentTable } from './components/IncidentTable';
 import {
   fetchHealth,
   fetchCurrentMetrics,
+  fetchAlerts,
+  fetchServices,
   fetchIncidents,
   resolveIncident,
   triggerManualIncident,
 } from './services/api';
-import { TelemetrySocket } from './services/websocket';
-import { HealthStatus, Incident, SystemTelemetry, AnomalyScore } from './types';
+import { MonitoringSocket } from './services/websocket';
+import {
+  Alert,
+  ConnectionState,
+  HealthStatus,
+  Incident,
+  ServiceItem,
+  SystemTelemetry,
+  WebSocketEvent,
+} from './types';
 
 interface ChartPoint {
   time: string;
@@ -24,12 +36,16 @@ interface ChartPoint {
 export const App: React.FC = () => {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [telemetry, setTelemetry] = useState<SystemTelemetry | null>(null);
-  const [anomaly, setAnomaly] = useState<AnomalyScore | null>(null);
-  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
-  const [wsConnected, setWsConnected] = useState(false);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [services, setServices] = useState<ServiceItem[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
+  const [reconnectDelay, setReconnectDelay] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(false);
-  const [backendError, setBackendError] = useState<string | null>(null);
+  const [lastEventNotice, setLastEventNotice] = useState<string | null>(null);
+
+  const socketRef = useRef<MonitoringSocket | null>(null);
 
   const appendChartPoint = useCallback((t: SystemTelemetry) => {
     const timeLabel = new Date(t.timestamp).toLocaleTimeString([], {
@@ -38,61 +54,149 @@ export const App: React.FC = () => {
       second: '2-digit',
     });
     setChartData((prev) => {
-      const next = [...prev, { time: timeLabel, cpu: t.cpu_percent, memory: t.memory_percent, disk: t.disk_percent }];
+      const next = [
+        ...prev,
+        {
+          time: timeLabel,
+          cpu: t.cpu_percent,
+          memory: t.memory_percent,
+          disk: t.disk_percent,
+        },
+      ];
       return next.length > 30 ? next.slice(next.length - 30) : next;
     });
   }, []);
 
-  const loadData = useCallback(async () => {
+  const handleWebSocketMessage = useCallback(
+    (event: WebSocketEvent) => {
+      switch (event.type) {
+        case 'INITIAL_STATE': {
+          const { telemetry: initTelem, active_alerts: initAlerts, services: initSvcs } = event.data;
+          if (initTelem) {
+            setTelemetry(initTelem);
+            appendChartPoint(initTelem);
+          }
+          if (initAlerts) setAlerts(initAlerts);
+          if (initSvcs) setServices(initSvcs);
+          setLastEventNotice('Synchronized live state over WebSocket');
+          break;
+        }
+
+        case 'METRICS_UPDATE': {
+          const telem: SystemTelemetry = event.data;
+          setTelemetry(telem);
+          appendChartPoint(telem);
+          break;
+        }
+
+        case 'NEW_ALERT': {
+          const newAlert: Alert = event.data;
+          setAlerts((prev) => {
+            const filtered = prev.filter((a) => a.id !== newAlert.id);
+            return [newAlert, ...filtered];
+          });
+          setLastEventNotice(`Alert Triggered: ${newAlert.service} ${newAlert.metric} [${newAlert.severity}]`);
+          break;
+        }
+
+        case 'ALERT_RESOLVED': {
+          const resolved: Alert = event.data;
+          setAlerts((prev) =>
+            prev.map((a) =>
+              a.metric === resolved.metric && a.service === resolved.service
+                ? { ...a, status: 'RESOLVED', resolved_at: new Date().toISOString() }
+                : a
+            )
+          );
+          setLastEventNotice(`Alert Normalized: ${resolved.metric} on ${resolved.service}`);
+          break;
+        }
+
+        case 'INCIDENT_UPDATE': {
+          const inc: Incident = event.data;
+          setIncidents((prev) => {
+            const index = prev.findIndex((i) => i.id === inc.id);
+            if (index >= 0) {
+              const updated = [...prev];
+              updated[index] = { ...updated[index], ...inc };
+              return updated;
+            }
+            return [inc, ...prev];
+          });
+          setLastEventNotice(`Incident Updated: ${inc.id} (${inc.status})`);
+          break;
+        }
+
+        case 'SERVICE_STATUS_CHANGE': {
+          const { service_id, service_name, status } = event.data;
+          setServices((prev) =>
+            prev.map((s) =>
+              s.id === service_id || s.name === service_name
+                ? { ...s, status }
+                : s
+            )
+          );
+          setLastEventNotice(`Service Status Changed: ${service_name} -> ${status}`);
+          break;
+        }
+
+        default:
+          break;
+      }
+    },
+    [appendChartPoint]
+  );
+
+  const loadInitialData = useCallback(async () => {
     setLoading(true);
     try {
-      setBackendError(null);
-      const [h, m, incs] = await Promise.all([
+      const [h, t, alts, svcs, incs] = await Promise.all([
         fetchHealth().catch(() => null),
         fetchCurrentMetrics().catch(() => null),
+        fetchAlerts().catch(() => []),
+        fetchServices().catch(() => []),
         fetchIncidents().catch(() => []),
       ]);
 
       if (h) setHealth(h);
-      if (m) {
-        setTelemetry(m);
-        appendChartPoint(m);
+      if (t) {
+        setTelemetry(t);
+        appendChartPoint(t);
       }
+      setAlerts(alts);
+      setServices(svcs);
       setIncidents(incs);
-    } catch (err: any) {
-      setBackendError(err.message || 'Unable to connect to AegisOps Backend');
+    } catch (err) {
+      console.error('Initial data fetch error:', err);
     } finally {
       setLoading(false);
     }
   }, [appendChartPoint]);
 
   useEffect(() => {
-    loadData();
+    loadInitialData();
 
-    // Initialize real-time WebSocket connection
-    const socket = new TelemetrySocket(
+    // Auto-connect WebSocket to /ws/monitor with exponential reconnect
+    const socket = new MonitoringSocket(
       undefined,
-      (data) => {
-        setTelemetry(data.telemetry);
-        setAnomaly(data.anomaly);
-        appendChartPoint(data.telemetry);
-      },
-      (connected) => {
-        setWsConnected(connected);
+      (event) => handleWebSocketMessage(event),
+      (state, delay) => {
+        setConnectionState(state);
+        setReconnectDelay(delay);
       }
     );
 
     socket.connect();
+    socketRef.current = socket;
 
     return () => {
       socket.disconnect();
     };
-  }, [loadData, appendChartPoint]);
+  }, [loadInitialData, handleWebSocketMessage]);
 
   const handleResolveIncident = async (id: string) => {
     try {
       await resolveIncident(id, 'Resolved via Operations Console action');
-      await loadData();
     } catch (err) {
       console.error('Error resolving incident:', err);
     }
@@ -101,78 +205,57 @@ export const App: React.FC = () => {
   const handleSimulateDrill = async () => {
     try {
       await triggerManualIncident(
-        'Synthetic Chaos Spike Drill',
-        'Simulated stress injection to verify autopilot anomaly response pipeline',
+        'Operational Stress Drill',
+        'Simulated stress drill to test real-time WebSocket dashboard reactivity',
         'HIGH'
       );
-      await loadData();
     } catch (err) {
       console.error('Error simulating drill:', err);
     }
+  };
+
+  // Format uptime cleanly
+  const formatUptime = (seconds?: number) => {
+    if (!seconds) return '--';
+    const d = Math.floor(seconds / (3600 * 24));
+    const h = Math.floor((seconds % (3600 * 24)) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m ${Math.floor(seconds % 60)}s`;
   };
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col">
       <Navbar
         health={health}
-        wsConnected={wsConnected}
-        onRefresh={loadData}
+        connectionState={connectionState}
+        reconnectDelay={reconnectDelay}
+        onRefresh={loadInitialData}
         loading={loading}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Backend Connectivity Error Alert */}
-        {backendError && (
-          <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-4 text-sm text-red-300 flex items-center justify-between">
+        {/* Real-time Event Toast / Banner */}
+        {lastEventNotice && (
+          <div className="rounded-lg border border-cyan-500/30 bg-cyan-950/20 px-4 py-2 text-xs text-cyan-300 flex items-center justify-between shadow-sm animate-fadeIn">
             <div className="flex items-center gap-2">
-              <AlertOctagon className="h-5 w-5 text-red-400 shrink-0" />
-              <span>{backendError}. Verify backend server is running on http://localhost:8000.</span>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+              </span>
+              <span className="font-mono">{lastEventNotice}</span>
             </div>
             <button
-              onClick={loadData}
-              className="px-3 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-xs font-semibold text-red-200"
+              onClick={() => setLastEventNotice(null)}
+              className="text-cyan-400 hover:text-cyan-200 text-xs font-mono"
             >
-              Retry
+              dismiss
             </button>
           </div>
         )}
 
-        {/* Real-time Anomaly Intelligence Banner */}
-        {anomaly?.is_anomaly ? (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-4 shadow-lg flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
-                <AlertOctagon className="h-5 w-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-amber-300">
-                  scikit-learn Anomaly Alert: {anomaly.description}
-                </h4>
-                <p className="text-xs text-slate-400">
-                  Anomaly score: <span className="font-mono text-amber-400">{anomaly.score}</span> | Confidence: {(anomaly.confidence * 100).toFixed(0)}%
-                </p>
-              </div>
-            </div>
-            <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-mono">
-              OUTLIER DETECTED
-            </span>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-slate-800/80 bg-[#0b1120]/60 p-3.5 px-4 shadow flex items-center justify-between text-xs text-slate-400">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-emerald-400" />
-              <span>
-                ML Model Status: <strong className="text-slate-200">IsolationForest Nominal</strong> (Contamination threshold: 0.05)
-              </span>
-            </div>
-            <div className="flex items-center gap-3 font-mono">
-              <span>Host: <strong className="text-slate-300">{telemetry?.host_name || 'localhost'}</strong></span>
-              <span>DB: <strong className="text-cyan-400">{health?.database || 'Active'}</strong></span>
-            </div>
-          </div>
-        )}
-
-        {/* Telemetry Metric Cards */}
+        {/* Real-time Hardware Telemetry Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard
             title="CPU Utilization"
@@ -181,13 +264,13 @@ export const App: React.FC = () => {
             icon={Cpu}
             percentage={telemetry?.cpu_percent}
             status={
-              telemetry && telemetry.cpu_percent > 85
+              telemetry && telemetry.cpu_percent >= 90
                 ? 'critical'
-                : telemetry && telemetry.cpu_percent > 70
+                : telemetry && telemetry.cpu_percent >= 70
                 ? 'warning'
                 : 'normal'
             }
-            subtext="Multi-core Host Processor"
+            subtext="Threshold: Warning 70% | Critical 90%"
           />
 
           <MetricCard
@@ -197,56 +280,51 @@ export const App: React.FC = () => {
             icon={Server}
             percentage={telemetry?.memory_percent}
             status={
-              telemetry && telemetry.memory_percent > 88
+              telemetry && telemetry.memory_percent >= 90
                 ? 'critical'
-                : telemetry && telemetry.memory_percent > 75
+                : telemetry && telemetry.memory_percent >= 75
                 ? 'warning'
                 : 'normal'
             }
-            subtext={
-              telemetry?.memory_used_gb && telemetry?.memory_total_gb
-                ? `${telemetry.memory_used_gb} GB of ${telemetry.memory_total_gb} GB`
-                : 'Virtual Memory Subsystem'
-            }
+            subtext="Threshold: Warning 75% | Critical 90%"
           />
 
           <MetricCard
-            title="Disk Partition"
+            title="Disk Usage"
             value={telemetry?.disk_percent !== undefined ? telemetry.disk_percent : '--'}
             unit="%"
             icon={HardDrive}
             percentage={telemetry?.disk_percent}
             status={
-              telemetry && telemetry.disk_percent > 90
+              telemetry && telemetry.disk_percent >= 90
                 ? 'critical'
-                : telemetry && telemetry.disk_percent > 80
+                : telemetry && telemetry.disk_percent >= 80
                 ? 'warning'
                 : 'normal'
             }
-            subtext={
-              telemetry?.disk_free_gb
-                ? `${telemetry.disk_free_gb} GB Free Space`
-                : 'Root Partition'
-            }
+            subtext="Threshold: Warning 80% | Critical 90%"
           />
 
           <MetricCard
-            title="Active Processes"
+            title="Processes & Uptime"
             value={telemetry?.process_count !== undefined ? telemetry.process_count : '--'}
+            unit="tasks"
             icon={Layers}
             status="normal"
-            subtext={
-              telemetry?.network_sent_mb !== undefined
-                ? `Net: ↑${telemetry.network_sent_mb}MB ↓${telemetry.network_recv_mb}MB`
-                : 'Running OS Task Threads'
-            }
+            subtext={`Uptime: ${formatUptime(telemetry?.uptime_seconds)}`}
           />
         </div>
 
-        {/* Live Recharts Streaming Graph */}
+        {/* Real-time Streaming Time-series Chart */}
         <LiveChart data={chartData} />
 
-        {/* Incident Management & AI Triage */}
+        {/* Live Operational Alerts Feed */}
+        <AlertFeed alerts={alerts} />
+
+        {/* Monitored Infrastructure Services */}
+        <ServicesCatalog services={services} />
+
+        {/* Real-time Incident Triage Table */}
         <IncidentTable
           incidents={incidents}
           onResolve={handleResolveIncident}
@@ -255,8 +333,8 @@ export const App: React.FC = () => {
         />
       </main>
 
-      <footer className="border-t border-slate-800/80 bg-[#070b14] py-4 text-center text-xs text-slate-500">
-        AegisOps Autonomous AI Operations Center &copy; 2026. Built with FastAPI, WebSocket, scikit-learn, and React.
+      <footer className="border-t border-slate-800/80 bg-[#070b14] py-4 text-center text-xs text-slate-500 font-mono">
+        AegisOps Autonomous AI Operations Center &copy; 2026. Live Streaming via WebSocket (ws://localhost:8000/ws/monitor).
       </footer>
     </div>
   );

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Bot, Clock, ExternalLink } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Bot, Clock } from 'lucide-react';
 import { Incident } from '../types';
 
 interface IncidentTableProps {

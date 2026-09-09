@@ -112,7 +112,7 @@ def get_incident(incident_id: str, db: Session = Depends(get_sync_db)):
 
 
 @router.post("", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED, summary="Create Incident")
-def create_incident(payload: IncidentCreate, db: Session = Depends(get_sync_db)):
+async def create_incident(payload: IncidentCreate, db: Session = Depends(get_sync_db)):
     """Creates a new operational incident ticket and logs an initial event."""
     incident_id = payload.id or f"INC-{uuid.uuid4().hex[:8].upper()}"
     new_inc = IncidentModel(
@@ -142,11 +142,16 @@ def create_incident(payload: IncidentCreate, db: Session = Depends(get_sync_db))
 
     db.commit()
     db.refresh(new_inc)
+    try:
+        from backend.core.websocket_manager import ws_manager
+        await ws_manager.broadcast_incident(new_inc.to_dict(), event_type="INCIDENT_UPDATE")
+    except Exception as exc:
+        logger.debug("Failed to broadcast new incident: %s", exc)
     return new_inc
 
 
 @router.post("/{incident_id}/resolve", response_model=IncidentResponse, summary="Resolve Incident")
-def resolve_incident(
+async def resolve_incident(
     incident_id: str,
     payload: IncidentResolveRequest,
     db: Session = Depends(get_sync_db),
@@ -179,4 +184,11 @@ def resolve_incident(
 
     db.commit()
     db.refresh(inc)
+
+    try:
+        from backend.core.websocket_manager import ws_manager
+        await ws_manager.broadcast_incident(inc.to_dict(), event_type="INCIDENT_UPDATE")
+    except Exception as exc:
+        logger.debug("Failed to broadcast resolved incident: %s", exc)
+
     return inc

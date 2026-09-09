@@ -69,7 +69,37 @@ class MonitoringService:
         # 3. Persist metrics and alerts to PostgreSQL
         self._persist_to_database(telemetry, new_alerts, resolved_alerts)
 
+        # 4. Broadcast real-time events to connected dashboard clients
+        self._broadcast_updates(telemetry, new_alerts, resolved_alerts)
+
         return telemetry, new_alerts, resolved_alerts
+
+    def _broadcast_updates(
+        self,
+        telemetry: SystemTelemetry,
+        new_alerts: List[dict],
+        resolved_alerts: List[dict],
+    ) -> None:
+        """Dispatches metrics and alert changes over WebSocket."""
+        try:
+            from backend.core.websocket_manager import ws_manager
+            if ws_manager.client_count == 0:
+                return
+
+            loop = None
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+
+            if loop and loop.is_running():
+                loop.create_task(ws_manager.broadcast_metrics(telemetry))
+                for a in new_alerts:
+                    loop.create_task(ws_manager.broadcast_alert(a, "NEW_ALERT"))
+                for r in resolved_alerts:
+                    loop.create_task(ws_manager.broadcast_alert(r, "ALERT_RESOLVED"))
+        except Exception as e:
+            logger.debug("Failed to broadcast monitoring update via WebSocket: %s", e)
 
     def _persist_to_database(
         self,

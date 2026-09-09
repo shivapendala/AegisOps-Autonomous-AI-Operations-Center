@@ -10,6 +10,7 @@ export interface SystemTelemetry {
   network_sent_mb?: number;
   network_recv_mb?: number;
   process_count: number;
+  uptime_seconds?: number;
 }
 
 export interface AnomalyScore {
@@ -21,17 +22,58 @@ export interface AnomalyScore {
   description: string;
 }
 
+export interface Alert {
+  id: number | string;
+  service: string;
+  metric: string;
+  value: number;
+  threshold: number;
+  severity: 'WARNING' | 'CRITICAL' | 'INFO' | 'HIGH' | 'MEDIUM' | 'LOW';
+  message: string;
+  timestamp: string;
+  status: 'ACTIVE' | 'RESOLVED' | 'ACKNOWLEDGED' | 'SUPERSEDED';
+}
+
+export interface ServiceItem {
+  id: number;
+  name: string;
+  description?: string;
+  status: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY';
+  tier: string;
+  endpoint_url?: string;
+}
+
 export interface Incident {
   id: string;
+  service_id?: number;
+  service_name?: string;
   title: string;
-  description: string;
+  description?: string;
   severity: 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   status: 'OPEN' | 'INVESTIGATING' | 'MITIGATING' | 'RESOLVED' | 'CLOSED';
   root_cause?: string;
+  impact_summary?: string;
   ai_remediation?: string;
   anomaly_score?: number;
   created_at: string;
   updated_at: string;
+  resolved_at?: string;
+  events?: Array<{
+    id: number;
+    event_type: string;
+    description: string;
+    actor: string;
+    created_at: string;
+  }>;
+  recommendations?: Array<{
+    id: number;
+    title: string;
+    description: string;
+    action_type: string;
+    confidence: number;
+    priority: string;
+    status: string;
+  }>;
 }
 
 export interface HealthStatus {
@@ -40,6 +82,7 @@ export interface HealthStatus {
   version: string;
   uptime_seconds: number;
   database: string;
+  tables_ready: boolean;
   ai_engine: {
     provider: string;
     anomaly_detector: string;
@@ -47,8 +90,17 @@ export interface HealthStatus {
   timestamp: string;
 }
 
-export interface WebSocketTelemetryMessage {
-  type: 'TELEMETRY_UPDATE';
-  telemetry: SystemTelemetry;
-  anomaly: AnomalyScore;
+export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
+
+export interface WebSocketEvent {
+  type:
+    | 'INITIAL_STATE'
+    | 'METRICS_UPDATE'
+    | 'NEW_ALERT'
+    | 'ALERT_RESOLVED'
+    | 'INCIDENT_UPDATE'
+    | 'SERVICE_STATUS_CHANGE'
+    | 'PONG';
+  data?: any;
+  timestamp?: string;
 }

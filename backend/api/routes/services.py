@@ -42,7 +42,7 @@ def get_service(service_id: int, db: Session = Depends(get_sync_db)):
 
 
 @router.post("", response_model=ServiceResponse, status_code=status.HTTP_201_CREATED, summary="Register Service")
-def create_service(payload: ServiceCreate, db: Session = Depends(get_sync_db)):
+async def create_service(payload: ServiceCreate, db: Session = Depends(get_sync_db)):
     """Registers a new service in the AegisOps monitoring catalog."""
     new_svc = ServiceModel(
         name=payload.name,
@@ -54,4 +54,45 @@ def create_service(payload: ServiceCreate, db: Session = Depends(get_sync_db)):
     db.add(new_svc)
     db.commit()
     db.refresh(new_svc)
+
+    try:
+        from backend.core.websocket_manager import ws_manager
+        await ws_manager.broadcast_service_status(
+            service_name=new_svc.name,
+            status=new_svc.status,
+            service_id=new_svc.id,
+            details=f"Service {new_svc.name} registered as {new_svc.status}",
+        )
+    except Exception as exc:
+        pass
+
     return new_svc
+
+
+@router.patch("/{service_id}/status", response_model=ServiceResponse, summary="Update Service Status")
+async def update_service_status(
+    service_id: int,
+    status_val: str = Query(..., alias="status", description="New status (HEALTHY, DEGRADED, UNHEALTHY)"),
+    db: Session = Depends(get_sync_db),
+):
+    """Updates the operational status of a service and broadcasts the change."""
+    svc = db.query(ServiceModel).filter(ServiceModel.id == service_id).first()
+    if not svc:
+        raise ResourceNotFoundError("Service", str(service_id))
+
+    svc.status = status_val.upper()
+    db.commit()
+    db.refresh(svc)
+
+    try:
+        from backend.core.websocket_manager import ws_manager
+        await ws_manager.broadcast_service_status(
+            service_name=svc.name,
+            status=svc.status,
+            service_id=svc.id,
+            details=f"Service {svc.name} status transitioned to {svc.status}",
+        )
+    except Exception as exc:
+        pass
+
+    return svc

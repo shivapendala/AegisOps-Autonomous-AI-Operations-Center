@@ -1,6 +1,6 @@
-import { HealthStatus, Incident, SystemTelemetry, AnomalyScore } from '../types';
+import { Alert, HealthStatus, Incident, ServiceItem, SystemTelemetry, AnomalyScore } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
 export async function fetchHealth(): Promise<HealthStatus> {
   const res = await fetch(`${API_BASE}/health`);
@@ -14,9 +14,23 @@ export async function fetchCurrentMetrics(): Promise<SystemTelemetry> {
   return res.json();
 }
 
-export async function fetchMetricHistory(limit = 30): Promise<SystemTelemetry[]> {
-  const res = await fetch(`${API_BASE}/metrics/history?limit=${limit}`);
+export async function fetchMetricHistory(limit = 30): Promise<any[]> {
+  const res = await fetch(`${API_BASE}/metrics?limit=${limit}`);
   if (!res.ok) throw new Error(`Fetch metric history failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchAlerts(status?: string): Promise<Alert[]> {
+  const url = status ? `${API_BASE}/alerts?status=${status}` : `${API_BASE}/alerts`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Fetch alerts failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchServices(status?: string): Promise<ServiceItem[]> {
+  const url = status ? `${API_BASE}/services?status=${status}` : `${API_BASE}/services`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Fetch services failed: ${res.statusText}`);
   return res.json();
 }
 
