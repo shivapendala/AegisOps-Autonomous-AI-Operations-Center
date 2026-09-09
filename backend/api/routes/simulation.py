@@ -7,9 +7,11 @@ Exposes controls for presentation drills:
 """
 
 from typing import Any, Dict
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
+from database.session import get_sync_db
 from monitoring.simulation import simulation_engine, FailureScenario
 
 router = APIRouter(prefix="/simulation", tags=["Simulation & Demos"])
@@ -19,7 +21,7 @@ class ScenarioTriggerRequest(BaseModel):
     scenario: str = Field(
         ...,
         description="Scenario to trigger: NORMAL, HIGH_CPU, DATABASE_OVERLOAD, API_LATENCY_SPIKE, ERROR_RATE_SPIKE, COMBINED_PAYMENT_FAILURE, RECOVER",
-        example="COMBINED_PAYMENT_FAILURE",
+        json_schema_extra={"example": "COMBINED_PAYMENT_FAILURE"},
     )
 
 
@@ -57,6 +59,26 @@ def trigger_scenario(payload: ScenarioTriggerRequest):
     """
     result = simulation_engine.set_scenario(payload.scenario)
     return result
+
+
+@router.post("/payment-failure", summary="Trigger Payment Failure Cascading Simulation Drill")
+def trigger_payment_failure(db: Session = Depends(get_sync_db)):
+    """
+    STEP 11 — Create Payment Failure Simulation.
+    Triggers cascading operational failure on Payment API:
+      Payment API
+           ↓
+      10:31:01 CPU increases (94%)
+           ↓
+      10:31:03 DB connections increase (96%)
+           ↓
+      10:31:05 API latency increases (2.8 sec)
+           ↓
+      10:31:07 HTTP 500 increases (18%)
+
+    Produces 4 alerts correlated by the Correlation Engine into ONE INCIDENT.
+    """
+    return simulation_engine.trigger_payment_failure(db)
 
 
 @router.post("/reset", response_model=SimulationStatusResponse, summary="Reset Simulation to Normal")

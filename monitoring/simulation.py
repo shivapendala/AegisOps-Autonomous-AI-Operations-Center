@@ -33,7 +33,7 @@ The correlation engine deterministically combines them into ONE incident.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 import logging
 import random
@@ -527,6 +527,227 @@ class SimulationEngine:
             timestamp=now,
         )
         return snapshot, alerts
+
+    def trigger_payment_failure(self, db: Optional[Session] = None) -> Dict[str, Any]:
+        """
+        STEP 11 — Create Payment Failure Simulation.
+        Cascading failure sequence on Payment API:
+          Payment API
+               ↓
+          10:31:01 CPU increases (94%)
+               ↓
+          10:31:03 DB connections increase (96%)
+               ↓
+          10:31:05 API latency increases (2.8 sec)
+               ↓
+          10:31:07 HTTP 500 increases (18%)
+
+        Then:
+          4 ALERTS
+             ↓
+          Correlation Engine
+             ↓
+          ONE INCIDENT
+        """
+        owns_db = False
+        if db is None:
+            db = self.db_factory()
+            owns_db = True
+
+        try:
+            now = datetime.now(timezone.utc)
+            t0 = now - timedelta(seconds=6)
+            t1 = now - timedelta(seconds=4)
+            t2 = now - timedelta(seconds=2)
+            t3 = now
+
+            # 1. Ensure Payment API service exists
+            svc = db.query(ServiceModel).filter(ServiceModel.name == "Payment API").first()
+            if not svc:
+                svc = ServiceModel(
+                    name="Payment API",
+                    description="Credit card processing, billing settlement, and tokenized payments",
+                    tier="CRITICAL",
+                    status="CRITICAL",
+                    endpoint_url="https://payments.aegisops.internal/v1",
+                )
+                db.add(svc)
+                db.commit()
+                db.refresh(svc)
+            else:
+                svc.status = "CRITICAL"
+                db.commit()
+
+            svc_id = svc.id
+            self._service_id_map["Payment API"] = svc_id
+
+            # 2. Sequential Alert specifications matching user request
+            cascade_specs = [
+                {
+                    "metric": "CPU",
+                    "metric_name": "cpu_usage",
+                    "value": 94.0,
+                    "value_display": "94%",
+                    "threshold": 85.0,
+                    "severity": "HIGH",
+                    "message": "Payment API CPU utilization reached 94%",
+                    "timestamp": t0,
+                    "unit": "%",
+                },
+                {
+                    "metric": "DB connections",
+                    "metric_name": "database_connections",
+                    "value": 96.0,
+                    "value_display": "96%",
+                    "threshold": 85.0,
+                    "severity": "HIGH",
+                    "message": "Payment API database connection pool saturated at 96%",
+                    "timestamp": t1,
+                    "unit": "%",
+                },
+                {
+                    "metric": "API latency",
+                    "metric_name": "api_latency",
+                    "value": 2.8,
+                    "value_display": "2.8 sec",
+                    "threshold": 1.0,
+                    "severity": "HIGH",
+                    "message": "Payment API response latency degraded to 2.8 seconds",
+                    "timestamp": t2,
+                    "unit": "s",
+                },
+                {
+                    "metric": "HTTP 500",
+                    "metric_name": "http_500_errors",
+                    "value": 18.0,
+                    "value_display": "18%",
+                    "threshold": 5.0,
+                    "severity": "CRITICAL",
+                    "message": "Payment API HTTP 500 error rate surged to 18%",
+                    "timestamp": t3,
+                    "unit": "%",
+                },
+            ]
+
+            persisted_alerts: List[AlertModel] = []
+            timeline_items = []
+
+            for item in cascade_specs:
+                metric_rec = MetricModel(
+                    service_id=svc_id,
+                    metric_name=item["metric_name"],
+                    value=item["value"],
+                    unit=item["unit"],
+                    dimensions={"simulation": True, "scenario": "COMBINED_PAYMENT_FAILURE"},
+                    timestamp=item["timestamp"],
+                )
+                db.add(metric_rec)
+
+                alert_rec = AlertModel(
+                    service_id=svc_id,
+                    service="Payment API",
+                    metric=item["metric"],
+                    value=item["value"],
+                    threshold=item["threshold"],
+                    severity=item["severity"],
+                    message=item["message"],
+                    status="ACTIVE",
+                    source="simulation-engine",
+                    timestamp=item["timestamp"],
+                    created_at=item["timestamp"],
+                )
+                db.add(alert_rec)
+                db.flush()
+                persisted_alerts.append(alert_rec)
+
+                timeline_items.append({
+                    "time": item["timestamp"].strftime("%H:%M:%S"),
+                    "timestamp": item["timestamp"].isoformat(),
+                    "metric": item["metric"],
+                    "value": item["value_display"],
+                    "severity": item["severity"],
+                    "alert_id": alert_rec.id,
+                })
+
+            db.commit()
+
+            # 3. Process 4 alerts sequentially through Correlation Engine
+            from backend.incidents.service import IncidentService
+            incident_service = IncidentService(window_seconds=60, threshold_score=60.0)
+
+            final_incident: Optional[IncidentModel] = None
+            for alt in persisted_alerts:
+                final_incident, _, _ = incident_service.correlate_alert(db, alt)
+
+            # 4. Trigger AI RCA & Recommendations on the unified incident
+            try:
+                from backend.ai.investigator import IncidentInvestigator
+                investigator = IncidentInvestigator()
+                investigator.investigate_sync(final_incident.id, db, persist=True)
+                db.refresh(final_incident)
+            except Exception as exc:
+                logger.warning("Auto investigation failed on simulated incident: %s", exc)
+
+            # 5. Update simulation engine scenario status
+            self.active_scenario = FailureScenario.COMBINED_PAYMENT_FAILURE
+            self.scenario_start_time = now
+
+            snap = ServiceMetricsSnapshot(
+                service_name="Payment API",
+                service_id=svc_id,
+                latency=2800.0,
+                request_rate=850.0,
+                error_rate=18.0,
+                cpu=94.0,
+                memory=81.0,
+                database_connections=96.0,
+                status="CRITICAL",
+                timestamp=now,
+            )
+            self._last_snapshots["Payment API"] = snap
+
+            # 6. Broadcast update if websocket is active
+            try:
+                from backend.core.websocket_manager import ws_manager
+                import asyncio
+                loop = None
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    pass
+                if loop and loop.is_running():
+                    loop.create_task(ws_manager.broadcast_incident(final_incident.to_dict(), "INCIDENT_UPDATE"))
+                    loop.create_task(ws_manager.broadcast_event("SIMULATION_UPDATE", self.get_status()))
+            except Exception:
+                pass
+
+            recs_list = final_incident.recommendations or []
+            return {
+                "status": "success",
+                "message": "Payment failure simulation drill executed successfully",
+                "scenario": "COMBINED_PAYMENT_FAILURE",
+                "service": "Payment API",
+                "timeline": timeline_items,
+                "alerts_count": len(persisted_alerts),
+                "alerts": [a.to_dict() for a in persisted_alerts],
+                "incident": {
+                    "id": final_incident.id,
+                    "title": final_incident.title,
+                    "service": final_incident.service_name or "Payment API",
+                    "severity": final_incident.severity,
+                    "status": final_incident.status,
+                    "correlation_score": final_incident.correlation_score,
+                    "probable_cause": final_incident.probable_cause,
+                    "confidence_score": final_incident.confidence_score,
+                    "impact_summary": final_incident.impact_summary,
+                    "affected_metrics": final_incident.affected_metrics,
+                    "alerts_count": len(persisted_alerts),
+                },
+                "recommendations_count": len(recs_list),
+            }
+        finally:
+            if owns_db:
+                db.close()
 
     def step(self) -> Dict[str, Any]:
         """
