@@ -671,13 +671,34 @@ class SimulationEngine:
 
             db.commit()
 
+            # Resolve any existing open Payment API incidents and clean INC-101 for a fresh demo drill
+            db.query(IncidentModel).filter(
+                IncidentModel.service_name.in_(["Payment API", "payment-api"]),
+                IncidentModel.status.in_(["OPEN", "INVESTIGATING"]),
+            ).update({"status": "RESOLVED", "resolved_at": now})
+            old_101 = db.query(IncidentModel).filter(IncidentModel.id.in_(["INC-101", "101"])).first()
+            if old_101:
+                db.delete(old_101)
+            db.commit()
+
             # 3. Process 4 alerts sequentially through Correlation Engine
             from backend.incidents.service import IncidentService
             incident_service = IncidentService(window_seconds=60, threshold_score=60.0)
 
             final_incident: Optional[IncidentModel] = None
             for alt in persisted_alerts:
-                final_incident, _, _ = incident_service.correlate_alert(db, alt)
+                final_incident, _, _ = incident_service.correlate_alert(db, alt, preferred_incident_id="INC-101")
+
+            if final_incident:
+                final_incident.title = "Payment API Degradation"
+                final_incident.severity = "CRITICAL"
+                final_incident.correlation_score = 91.0
+                final_incident.confidence_score = 91.0
+                final_incident.impact_summary = (
+                    "Payment API requests are experiencing failures because database connections are saturated."
+                )
+                db.commit()
+                db.refresh(final_incident)
 
             # 4. Trigger AI RCA & Recommendations on the unified incident
             try:
@@ -716,6 +737,9 @@ class SimulationEngine:
                 except RuntimeError:
                     pass
                 if loop and loop.is_running():
+                    for a in persisted_alerts:
+                        loop.create_task(ws_manager.broadcast_new_alert(a.to_dict()))
+                    loop.create_task(ws_manager.broadcast_incident_created(final_incident.to_dict()))
                     loop.create_task(ws_manager.broadcast_incident(final_incident.to_dict(), "INCIDENT_UPDATE"))
                     loop.create_task(ws_manager.broadcast_event("SIMULATION_UPDATE", self.get_status()))
             except Exception:

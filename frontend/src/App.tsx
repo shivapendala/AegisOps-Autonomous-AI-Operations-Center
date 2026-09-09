@@ -22,6 +22,8 @@ import {
   triggerManualIncident,
   fetchSimulationStatus,
   setSimulationScenario,
+  triggerPaymentFailure,
+  resetSimulation,
 } from './services/api';
 import { MonitoringSocket } from './services/websocket';
 import {
@@ -107,14 +109,19 @@ export const App: React.FC = () => {
       (a) => a.status.toUpperCase() === 'ACTIVE' && a.severity.toUpperCase() === 'CRITICAL'
     );
     const hasCriticalIncident = incidents.some(
-      (i) => i.status.toUpperCase() !== 'RESOLVED' && i.severity.toUpperCase() === 'CRITICAL'
+      (i) =>
+        i.status.toUpperCase() !== 'RESOLVED' &&
+        i.status.toUpperCase() !== 'CLOSED' &&
+        i.severity.toUpperCase() === 'CRITICAL'
     );
     if (hasCriticalAlert || hasCriticalIncident) return 'CRITICAL';
 
     const hasWarningAlert = alerts.some(
       (a) => a.status.toUpperCase() === 'ACTIVE' && (a.severity.toUpperCase() === 'WARNING' || a.severity.toUpperCase() === 'HIGH')
     );
-    const hasActiveIncident = incidents.some((i) => i.status.toUpperCase() !== 'RESOLVED');
+    const hasActiveIncident = incidents.some(
+      (i) => i.status.toUpperCase() !== 'RESOLVED' && i.status.toUpperCase() !== 'CLOSED'
+    );
     const hasDegradedService = services.some((s) => s.status.toUpperCase() !== 'HEALTHY');
 
     if (hasWarningAlert || hasActiveIncident || hasDegradedService) return 'DEGRADED';
@@ -540,12 +547,21 @@ export const App: React.FC = () => {
   const handleSelectScenario = async (scenario: string) => {
     setLoading(true);
     try {
-      const res = await setSimulationScenario(scenario);
+      let res;
+      if (scenario === 'COMBINED_PAYMENT_FAILURE' || scenario === 'PAYMENT_FAILURE') {
+        res = await triggerPaymentFailure();
+        setToastNotice('🚨 Payment Failure Simulation Activated: 4 Alerts correlated into 1 Incident (#101)');
+      } else if (scenario === 'RECOVER_SYSTEM' || scenario === 'NORMAL') {
+        res = await resetSimulation();
+        setToastNotice('✅ System Restored: All services normalized to healthy baseline');
+      } else {
+        res = await setSimulationScenario(scenario);
+        setToastNotice(`🎯 Simulation Scenario Activated: ${scenario.replace(/_/g, ' ')}`);
+      }
       if (res && res.active_scenario) {
         setActiveScenario(res.active_scenario);
         if (res.services) setSimulatedServices(res.services);
       }
-      setToastNotice(`🎯 Simulation Scenario Activated: ${scenario.replace(/_/g, ' ')}`);
       // Reload alerts, incidents, and services immediately
       await loadInitialData();
     } catch (err) {
