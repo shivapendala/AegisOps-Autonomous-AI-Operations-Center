@@ -410,6 +410,14 @@ class EventCorrelationEngine:
             if incident.status.upper() == "RESOLVED":
                 continue
 
+            # Temporal window constraint: alerts occurring outside the sliding window
+            # cannot correlate into an existing incident
+            inc_time = incident.updated_at
+            if inc_time.tzinfo is None:
+                inc_time = inc_time.replace(tzinfo=timezone.utc)
+            if abs((alert_time - inc_time).total_seconds()) > self.window_seconds:
+                continue
+
             score, _ = self.calculate_correlation_score(alert, incident)
             if score >= self.threshold_score and score > best_score:
                 best_score = score
