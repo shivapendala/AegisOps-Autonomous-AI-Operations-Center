@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import logging
 import platform
 import socket
+import time
 from typing import Any, Dict, List, Optional
 import psutil
 
@@ -33,6 +34,7 @@ class SystemCollector:
             disk = psutil.disk_usage("/") if self.os_type != "Windows" else psutil.disk_usage("C:\\")
             net = psutil.net_io_counters()
             process_count = len(psutil.pids())
+            uptime = round(time.time() - psutil.boot_time(), 2)
 
             return SystemTelemetry(
                 timestamp=datetime.now(timezone.utc),
@@ -46,6 +48,7 @@ class SystemCollector:
                 network_sent_mb=round(net.bytes_sent / (1024**2), 2),
                 network_recv_mb=round(net.bytes_recv / (1024**2), 2),
                 process_count=process_count,
+                uptime_seconds=uptime,
             )
         except Exception as exc:
             logger.error("Failed to sample system telemetry: %s", exc, exc_info=True)

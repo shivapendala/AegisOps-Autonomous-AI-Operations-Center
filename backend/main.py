@@ -15,7 +15,12 @@ from backend.core.exceptions import register_exception_handlers
 from backend.core.logger import setup_logging
 from database.init_db import setup_and_seed
 
+from monitoring.service import MonitoringService
+
 logger = setup_logging(settings.LOG_LEVEL)
+
+# Global monitoring service singleton
+monitoring_service = MonitoringService(interval_seconds=2.0)
 
 
 @asynccontextmanager
@@ -28,9 +33,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.error("Database initialization encountered an error: %s", exc, exc_info=True)
 
+    # Launch real-time monitoring background service
+    try:
+        await monitoring_service.start()
+        logger.info("AegisOps Real-time Monitoring Engine started (2.0s interval).")
+    except Exception as exc:
+        logger.error("Failed to start monitoring background engine: %s", exc)
+
     logger.info("AegisOps Backend is ready on http://%s:%s", settings.HOST, settings.PORT)
     yield
     logger.info("Shutting down AegisOps Backend gracefully...")
+    await monitoring_service.stop()
 
 
 def create_app() -> FastAPI:

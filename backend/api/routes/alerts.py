@@ -50,13 +50,15 @@ def create_alert(payload: AlertCreate, db: Session = Depends(get_sync_db)):
     """Manually registers or raises an operational alert."""
     new_alert = AlertModel(
         service_id=payload.service_id,
-        title=payload.title,
-        description=payload.description,
+        service=payload.service,
+        metric=payload.metric,
+        value=payload.value,
+        threshold=payload.threshold,
         severity=payload.severity.upper(),
+        message=payload.message,
         status=payload.status.upper(),
         source=payload.source,
-        trigger_value=payload.trigger_value,
-        threshold_value=payload.threshold_value,
+        timestamp=payload.timestamp or datetime.now(timezone.utc),
     )
     db.add(new_alert)
     db.commit()

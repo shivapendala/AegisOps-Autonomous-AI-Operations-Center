@@ -64,10 +64,14 @@ def test_api_alerts_endpoint(client, db_session):
 
     # Check alert structure
     alert = data[0]
-    assert "title" in alert
+    assert "service" in alert
+    assert "metric" in alert
+    assert "value" in alert
+    assert "threshold" in alert
     assert "severity" in alert
+    assert "message" in alert
+    assert "timestamp" in alert
     assert "status" in alert
-    assert "source" in alert
 
     # Check filtering
     high_resp = client.get("/api/alerts?severity=HIGH")
