@@ -56,6 +56,7 @@ class IncidentService:
         self,
         db: Session,
         alert: Any,
+        preferred_incident_id: Optional[str] = None,
     ) -> Tuple[IncidentModel, bool, float]:
         """
         Correlates an incoming alert against open operational incidents in the database.
@@ -154,7 +155,14 @@ class IncidentService:
             return best_incident, False, best_score
 
         # 3. No match -> Open a brand new incident
-        inc_id = f"INC-{uuid.uuid4().hex[:8].upper()}"
+        inc_id = preferred_incident_id or alert_dict.get("preferred_incident_id")
+        if inc_id:
+            existing_inc = db.query(IncidentModel).filter(IncidentModel.id == inc_id).first()
+            if existing_inc:
+                db.delete(existing_inc)
+                db.flush()
+        else:
+            inc_id = f"INC-{uuid.uuid4().hex[:8].upper()}"
         svc_name = alert_dict.get("service", "system")
         metric = alert_dict.get("metric")
         metrics = [metric] if metric else []

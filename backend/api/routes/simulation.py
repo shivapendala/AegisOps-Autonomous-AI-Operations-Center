@@ -11,7 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from datetime import datetime, timezone
 from database.session import get_sync_db
+from database.models.alert import AlertModel
+from database.models.incident import IncidentModel
+from database.models.service import ServiceModel
 from monitoring.simulation import simulation_engine, FailureScenario
 
 router = APIRouter(prefix="/simulation", tags=["Simulation & Demos"])
@@ -82,8 +86,13 @@ def trigger_payment_failure(db: Session = Depends(get_sync_db)):
 
 
 @router.post("/reset", response_model=SimulationStatusResponse, summary="Reset Simulation to Normal")
-def reset_simulation():
+def reset_simulation(db: Session = Depends(get_sync_db)):
     """Recovers the entire system back to clean healthy NORMAL baseline."""
+    now = datetime.now(timezone.utc)
+    db.query(AlertModel).filter(AlertModel.status == "ACTIVE").update({"status": "RESOLVED", "resolved_at": now})
+    db.query(IncidentModel).filter(IncidentModel.status.in_(["OPEN", "INVESTIGATING"])).update({"status": "RESOLVED", "resolved_at": now})
+    db.query(ServiceModel).update({"status": "HEALTHY"})
+    db.commit()
     result = simulation_engine.set_scenario("NORMAL")
     return result
 

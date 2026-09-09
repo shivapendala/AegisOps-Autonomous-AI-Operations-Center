@@ -50,10 +50,10 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
     },
     {
       id: 'COMBINED_PAYMENT_FAILURE',
-      label: 'Payment Failure',
+      label: '🔥 Simulate Payment Failure',
       badge: 'Cascading / Correlation',
       icon: CreditCard,
-      desc: 'Multi-vector failure: CPU 92%, DB 95%, Latency 2.8s, 500s -> ONE Incident',
+      desc: 'Multi-vector failure: CPU 94%, DB 96%, Latency 2.8s, 500s -> ONE Incident',
       colorClass: 'hover:border-red-400 hover:bg-red-50 text-red-700',
       activeClass: 'bg-red-600 border-red-600 text-white shadow-md shadow-red-600/30',
     },
