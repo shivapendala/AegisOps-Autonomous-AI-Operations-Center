@@ -71,7 +71,7 @@ def test_mock_ai_provider_database_pool_exhaustion():
     assert any("db connection" in e.lower() or "database connection" in e.lower() for e in result.evidence)
     assert any("latency" in e.lower() for e in result.evidence)
     assert len(result.recommended_actions) >= 2
-    assert any("increase database connection pool" in a.lower() for a in result.recommended_actions)
+    assert any("database connection pool" in a.lower() for a in result.recommended_actions)
     assert result.provider == "MockAIProvider"
 
 
@@ -411,5 +411,197 @@ def test_step9_store_ai_investigation_in_incidents_table(db_session):
     assert "ai_root_cause_analysis" in persisted.metadata_json
     ai_meta = persisted.metadata_json["ai_root_cause_analysis"]
     assert ai_meta["probable_root_cause"] == "Database connection pool exhaustion"
+
+
+def test_step10_generate_recommended_actions_exact_items_and_priorities():
+    """
+    STEP 10 Verification - Recommended Actions Generation:
+    AI should recommend actions:
+      1. Check database connection pool (Priority: HIGH)
+      2. Inspect long-running queries (Priority: HIGH)
+      3. Check database CPU and memory (Priority: MEDIUM)
+      4. Review recent Payment API deployments (Priority: MEDIUM)
+    """
+    provider = MockAIProvider()
+
+    investigation = IncidentInvestigation(
+        incident_id="INC-STEP10-REC",
+        incident_info={
+            "id": "INC-STEP10-REC",
+            "title": "Payment API degradation",
+            "service": "Payment API",
+            "severity": "CRITICAL",
+        },
+        service_info={
+            "name": "Payment API",
+            "status": "DEGRADED",
+        },
+        correlated_alerts=[
+            {"metric": "CPU", "value": 94.0, "severity": "HIGH"},
+            {"metric": "DB connections", "value": 96.0, "severity": "HIGH"},
+            {"metric": "API latency", "value": 2.8, "severity": "HIGH"},
+            {"metric": "HTTP 500", "value": 18.0, "severity": "CRITICAL"},
+        ],
+        recent_metrics={
+            "CPU": 94.0,
+            "DB connections": 96.0,
+            "API latency": 2.8,
+            "HTTP 500": 18.0,
+        },
+    )
+
+    rca = provider.analyze_incident_sync(investigation)
+
+    # Verify recommended actions list contains exact items
+    expected_actions = [
+        ("Check database connection pool", "HIGH"),
+        ("Inspect long-running queries", "HIGH"),
+        ("Check database CPU and memory", "MEDIUM"),
+        ("Review recent Payment API deployments", "MEDIUM"),
+    ]
+
+    action_map = {item["action"]: item["priority"] for item in rca.recommended_action_items}
+    for expected_action, expected_priority in expected_actions:
+        assert expected_action in rca.recommended_actions, f"Missing action in recommended_actions: {expected_action}"
+        assert expected_action in action_map, f"Missing action in recommended_action_items: {expected_action}"
+        assert action_map[expected_action] == expected_priority, (
+            f"Action '{expected_action}' expected priority {expected_priority}, got {action_map[expected_action]}"
+        )
+
+
+def test_step10_safety_rule_ai_does_not_auto_execute_and_human_in_the_loop_workflow(client, db_session):
+    """
+    STEP 10 Verification - Important Safety Rule & Human-in-the-Loop:
+    1. AI generates recommendations in PENDING status.
+    2. AI should NOT automatically execute commands (status remains PENDING).
+    3. Flow: AI -> Recommendation -> Human Operator -> Approval -> Action.
+    4. Attempting to execute unapproved action MUST be blocked (HTTP 400).
+    5. After Human Operator approves, execution succeeds (HTTP 200).
+    """
+    now = datetime.now(timezone.utc)
+
+    # 1. Create Incident
+    inc = IncidentModel(
+        id="INC-STEP10-HITL",
+        service_name="Payment API",
+        title="Payment API Degradation",
+        severity="CRITICAL",
+        status="OPEN",
+        correlation_score=95.0,
+        affected_metrics=["DB connections", "API latency"],
+        created_at=now,
+        updated_at=now,
+    )
+    db_session.add(inc)
+
+    alert = AlertModel(
+        id=1001,
+        service="Payment API",
+        metric="DB connections",
+        value=96.0,
+        threshold=80.0,
+        severity="HIGH",
+        status="ACTIVE",
+        message="Database connections saturated at 96%",
+        timestamp=now,
+    )
+    db_session.add(alert)
+    db_session.flush()
+
+    evt = IncidentEventModel(
+        incident_id=inc.id,
+        alert_id=1001,
+        event_type="ALERT_ATTACHED",
+        description="Alert #1001 attached",
+        created_at=now,
+    )
+    db_session.add(evt)
+    db_session.commit()
+
+    # 2. Trigger AI Investigation
+    investigator = IncidentInvestigator(provider=MockAIProvider())
+    investigator.investigate_sync(inc.id, db_session, persist=True)
+
+    # 3. SAFETY CHECK: Verify all recommendations are PENDING (AI did NOT auto-execute)
+    recs = (
+        db_session.query(IncidentRecommendationModel)
+        .filter(IncidentRecommendationModel.incident_id == inc.id)
+        .order_by(IncidentRecommendationModel.id.asc())
+        .all()
+    )
+    assert len(recs) == 4
+    for r in recs:
+        assert r.status == "PENDING", f"Safety violation: recommendation {r.id} is {r.status}, expected PENDING!"
+
+    rec1 = recs[0]  # "Check database connection pool"
+    rec2 = recs[1]  # "Inspect long-running queries"
+
+    # 4. SAFETY VIOLATION CHECK: Try to execute unapproved recommendation directly
+    exec_resp = client.post(
+        f"/api/incidents/{inc.id}/recommendations/{rec1.id}/execute",
+        json={"operator": "Rogue-Process", "execution_notes": "Attempting auto-execution without approval"},
+    )
+    assert exec_resp.status_code == 400
+    assert "Safety Violation" in exec_resp.json()["detail"]
+
+    # Verify rec1 is still PENDING
+    db_session.refresh(rec1)
+    assert rec1.status == "PENDING"
+
+    # 5. HUMAN OPERATOR APPROVAL: Operator reviews and approves
+    approve_resp = client.post(
+        f"/api/incidents/{inc.id}/recommendations/{rec1.id}/approve",
+        json={"operator": "Operations-Engineer-Alice", "notes": "Approved: expanding connection pool to 200"},
+    )
+    assert approve_resp.status_code == 200
+    approved_data = approve_resp.json()
+    assert approved_data["status"] == "APPROVED"
+
+    db_session.refresh(rec1)
+    assert rec1.status == "APPROVED"
+
+    # Verify approval audit event logged in timeline
+    approval_event = (
+        db_session.query(IncidentEventModel)
+        .filter(
+            IncidentEventModel.incident_id == inc.id,
+            IncidentEventModel.event_type == "RECOMMENDATION_APPROVED",
+        )
+        .first()
+    )
+    assert approval_event is not None
+    assert approval_event.actor == "Operations-Engineer-Alice"
+
+    # 6. ACTION EXECUTION: Now that it is APPROVED, operator triggers action
+    exec_approved_resp = client.post(
+        f"/api/incidents/{inc.id}/recommendations/{rec1.id}/execute",
+        json={"operator": "Operations-Engineer-Alice", "execution_notes": "Executed pool resize playbook"},
+    )
+    assert exec_approved_resp.status_code == 200
+    exec_data = exec_approved_resp.json()
+    assert exec_data["status"] == "EXECUTED"
+
+    db_session.refresh(rec1)
+    assert rec1.status == "EXECUTED"
+
+    # 7. REJECTION FLOW: Operator rejects rec2
+    reject_resp = client.post(
+        f"/api/incidents/{inc.id}/recommendations/{rec2.id}/reject",
+        json={"operator": "Operations-Engineer-Alice", "reason": "Query optimization scheduled for next sprint"},
+    )
+    assert reject_resp.status_code == 200
+    assert reject_resp.json()["status"] == "REJECTED"
+
+    db_session.refresh(rec2)
+    assert rec2.status == "REJECTED"
+
+    # Try to execute rejected recommendation -> Must fail
+    exec_rejected = client.post(
+        f"/api/incidents/{inc.id}/recommendations/{rec2.id}/execute",
+        json={"operator": "Operations-Engineer-Alice"},
+    )
+    assert exec_rejected.status_code == 400
+    assert "Safety Violation" in exec_rejected.json()["detail"]
+
 
 

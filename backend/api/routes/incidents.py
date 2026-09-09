@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 import uuid
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from backend.core.exceptions import ResourceNotFoundError
@@ -15,7 +15,12 @@ from backend.schemas.incident import (
     IncidentResponse,
     IncidentResolveRequest,
 )
-from backend.schemas.recommendation import RecommendationResponse
+from backend.schemas.recommendation import (
+    RecommendationResponse,
+    RecommendationApprovalRequest,
+    RecommendationRejectRequest,
+    RecommendationExecuteRequest,
+)
 from database.models.alert import AlertModel
 from database.models.audit_log import AuditLogModel
 from database.models.incident import IncidentModel
@@ -277,16 +282,36 @@ def get_incident_recommendations(incident_id: str, db: Session = Depends(get_syn
     # Auto-synthesize recommendations from AI RCA if not yet persisted
     if not recs:
         meta = inc.metadata_json or {}
-        rca_actions = meta.get("ai_root_cause_analysis", {}).get("recommended_actions") or []
+        rca_meta = meta.get("ai_root_cause_analysis", {})
+        action_items = rca_meta.get("recommended_action_items")
+        rca_actions = rca_meta.get("recommended_actions") or []
         if not rca_actions and inc.ai_remediation:
             rca_actions = [inc.ai_remediation]
 
-        if rca_actions:
+        if action_items:
+            for item in action_items:
+                act = item.get("action")
+                rec = IncidentRecommendationModel(
+                    incident_id=inc.id,
+                    action=act,
+                    priority=item.get("priority", "HIGH"),
+                    status="PENDING",
+                    title=act,
+                    description=item.get("description", act),
+                )
+                db.add(rec)
+            db.commit()
+            recs = (
+                db.query(IncidentRecommendationModel)
+                .filter(IncidentRecommendationModel.incident_id == inc.id)
+                .all()
+            )
+        elif rca_actions:
             for idx, act in enumerate(rca_actions):
                 rec = IncidentRecommendationModel(
                     incident_id=inc.id,
                     action=str(act),
-                    priority="HIGH" if idx == 0 else "MEDIUM",
+                    priority="HIGH" if idx < 2 else "MEDIUM",
                     status="PENDING",
                     title=f"Action: {act[:40]}...",
                     description=str(act),
@@ -300,6 +325,182 @@ def get_incident_recommendations(incident_id: str, db: Session = Depends(get_syn
             )
 
     return recs
+
+
+@router.post(
+    "/{incident_id}/recommendations/{rec_id}/approve",
+    response_model=RecommendationResponse,
+    summary="Approve Incident Recommendation (Human Operator)",
+)
+def approve_recommendation(
+    incident_id: str,
+    rec_id: int,
+    payload: Optional[RecommendationApprovalRequest] = None,
+    db: Session = Depends(get_sync_db),
+):
+    """
+    Human Operator approves an AI-generated recommendation.
+    Enforces Safety Rule: AI recommends -> Human Operator approves -> Action.
+    Transitions status from PENDING to APPROVED.
+    """
+    inc = _get_incident_or_404(incident_id, db)
+    rec = (
+        db.query(IncidentRecommendationModel)
+        .filter(
+            IncidentRecommendationModel.id == rec_id,
+            IncidentRecommendationModel.incident_id == inc.id,
+        )
+        .first()
+    )
+    if not rec:
+        raise ResourceNotFoundError("IncidentRecommendation", str(rec_id))
+
+    req = payload or RecommendationApprovalRequest()
+    rec.status = "APPROVED"
+    now = datetime.now(timezone.utc)
+    rec.updated_at = now
+
+    event = IncidentEventModel(
+        incident_id=inc.id,
+        event_type="RECOMMENDATION_APPROVED",
+        description=f"Operator '{req.operator}' approved action: {rec.action}. Notes: {req.notes}",
+        actor=req.operator,
+        event_data={"recommendation_id": rec.id, "action": rec.action, "priority": rec.priority},
+        created_at=now,
+    )
+    db.add(event)
+
+    audit = AuditLogModel(
+        action="RECOMMENDATION_APPROVED",
+        actor=req.operator,
+        target=f"REC-{rec.id}",
+        details=f"Approved recommendation {rec.id} for incident {inc.id}: {rec.action}",
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+@router.post(
+    "/{incident_id}/recommendations/{rec_id}/reject",
+    response_model=RecommendationResponse,
+    summary="Reject Incident Recommendation (Human Operator)",
+)
+def reject_recommendation(
+    incident_id: str,
+    rec_id: int,
+    payload: Optional[RecommendationRejectRequest] = None,
+    db: Session = Depends(get_sync_db),
+):
+    """
+    Human Operator rejects an AI-generated recommendation.
+    Transitions status to REJECTED.
+    """
+    inc = _get_incident_or_404(incident_id, db)
+    rec = (
+        db.query(IncidentRecommendationModel)
+        .filter(
+            IncidentRecommendationModel.id == rec_id,
+            IncidentRecommendationModel.incident_id == inc.id,
+        )
+        .first()
+    )
+    if not rec:
+        raise ResourceNotFoundError("IncidentRecommendation", str(rec_id))
+
+    req = payload or RecommendationRejectRequest()
+    rec.status = "REJECTED"
+    now = datetime.now(timezone.utc)
+    rec.updated_at = now
+
+    event = IncidentEventModel(
+        incident_id=inc.id,
+        event_type="RECOMMENDATION_REJECTED",
+        description=f"Operator '{req.operator}' rejected action: {rec.action}. Reason: {req.reason}",
+        actor=req.operator,
+        event_data={"recommendation_id": rec.id, "action": rec.action},
+        created_at=now,
+    )
+    db.add(event)
+
+    audit = AuditLogModel(
+        action="RECOMMENDATION_REJECTED",
+        actor=req.operator,
+        target=f"REC-{rec.id}",
+        details=f"Rejected recommendation {rec.id} for incident {inc.id}: {rec.action}",
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+@router.post(
+    "/{incident_id}/recommendations/{rec_id}/execute",
+    response_model=RecommendationResponse,
+    summary="Execute Recommendation (Human Operator Action)",
+)
+def execute_recommendation(
+    incident_id: str,
+    rec_id: int,
+    payload: Optional[RecommendationExecuteRequest] = None,
+    db: Session = Depends(get_sync_db),
+):
+    """
+    Executes an action following human operator approval.
+    IMPORTANT SAFETY RULE:
+    AI should NOT automatically execute commands on servers.
+    Execution is strictly disallowed unless the recommendation has been APPROVED by a human operator.
+    Flow: AI -> Recommendation -> Human Operator -> Approval -> Action.
+    """
+    inc = _get_incident_or_404(incident_id, db)
+    rec = (
+        db.query(IncidentRecommendationModel)
+        .filter(
+            IncidentRecommendationModel.id == rec_id,
+            IncidentRecommendationModel.incident_id == inc.id,
+        )
+        .first()
+    )
+    if not rec:
+        raise ResourceNotFoundError("IncidentRecommendation", str(rec_id))
+
+    # SAFETY CHECK: Block execution if not approved by a human operator
+    if rec.status != "APPROVED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Safety Violation: Cannot execute recommendation #{rec.id} with status '{rec.status}'. "
+                f"Human Operator approval is strictly required before executing remediation commands."
+            ),
+        )
+
+    req = payload or RecommendationExecuteRequest()
+    now = datetime.now(timezone.utc)
+    rec.status = "EXECUTED"
+    rec.updated_at = now
+
+    event = IncidentEventModel(
+        incident_id=inc.id,
+        event_type="RECOMMENDATION_EXECUTED",
+        description=f"Action executed by '{req.operator}': {rec.action}. Notes: {req.execution_notes}",
+        actor=req.operator,
+        event_data={"recommendation_id": rec.id, "action": rec.action},
+        created_at=now,
+    )
+    db.add(event)
+
+    audit = AuditLogModel(
+        action="RECOMMENDATION_EXECUTED",
+        actor=req.operator,
+        target=f"REC-{rec.id}",
+        details=f"Executed approved recommendation {rec.id} for incident {inc.id}: {rec.action}",
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(rec)
+    return rec
 
 
 @router.post("", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED, summary="Create Incident")

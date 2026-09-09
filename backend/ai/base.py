@@ -46,6 +46,7 @@ class RootCauseAnalysisResult:
     reasoning_summary: str
     evidence: List[str] = field(default_factory=list)
     recommended_actions: List[str] = field(default_factory=list)
+    recommended_action_items: List[Dict[str, Any]] = field(default_factory=list)
     impact_summary: str = ""
     provider: str = "MockAIProvider"
     raw_response: Optional[str] = None
@@ -57,6 +58,7 @@ class RootCauseAnalysisResult:
             "reasoning_summary": self.reasoning_summary,
             "evidence": list(self.evidence),
             "recommended_actions": list(self.recommended_actions),
+            "recommended_action_items": list(self.recommended_action_items),
             "impact_summary": self.impact_summary,
             "provider": self.provider,
             "raw_response": self.raw_response,
