@@ -1,8 +1,4 @@
-"""
-Incident Management API Endpoints.
-Provides incident lifecycle tracking, timeline events, and AI remediation recommendations.
-"""
-
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 import uuid
@@ -15,15 +11,42 @@ from backend.schemas.incident import (
     IncidentCreate,
     IncidentDetailResponse,
     IncidentInvestigateRequest,
+    IncidentRelatedAlertResponse,
     IncidentResponse,
     IncidentResolveRequest,
 )
+from backend.schemas.recommendation import RecommendationResponse
+from database.models.alert import AlertModel
 from database.models.audit_log import AuditLogModel
 from database.models.incident import IncidentModel
 from database.models.incident_event import IncidentEventModel
+from database.models.recommendation import IncidentRecommendationModel
 from database.session import get_sync_db
 
+logger = logging.getLogger("aegisops.backend.api.incidents")
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
+
+
+def _get_incident_or_404(incident_id: str, db: Session) -> IncidentModel:
+    """Helper to locate incident by exact ID, prefix match (INC-), or partial identifier."""
+    inc = (
+        db.query(IncidentModel)
+        .options(
+            joinedload(IncidentModel.service),
+            joinedload(IncidentModel.events).joinedload(IncidentEventModel.alert),
+            joinedload(IncidentModel.recommendations),
+        )
+        .filter(
+            (IncidentModel.id == str(incident_id))
+            | (IncidentModel.id == f"INC-{incident_id}")
+            | (IncidentModel.id.ilike(f"%{incident_id}%"))
+        )
+        .first()
+    )
+    if not inc:
+        raise ResourceNotFoundError("Incident", str(incident_id))
+    return inc
+
 
 
 def _map_incident_detail(inc: IncidentModel) -> IncidentDetailResponse:
@@ -97,20 +120,186 @@ def list_incidents(
 @router.get("/{incident_id}", response_model=IncidentDetailResponse, summary="Get Incident Details")
 def get_incident(incident_id: str, db: Session = Depends(get_sync_db)):
     """Retrieves full incident details, event audit history, and AI recommendations."""
-    inc = (
-        db.query(IncidentModel)
-        .options(
-            joinedload(IncidentModel.service),
-            joinedload(IncidentModel.events),
-            joinedload(IncidentModel.recommendations),
-        )
-        .filter(IncidentModel.id == incident_id)
-        .first()
-    )
-    if not inc:
-        raise ResourceNotFoundError("Incident", incident_id)
-
+    inc = _get_incident_or_404(incident_id, db)
     return _map_incident_detail(inc)
+
+
+@router.get("/{incident_id}/events", response_model=List[IncidentRelatedAlertResponse], summary="Get Incident Related Alerts")
+def get_incident_events(incident_id: str, db: Session = Depends(get_sync_db)):
+    """
+    Returns related alerts connected to this incident ticket.
+    Traverses incident_events and resolves associated Alert records.
+    """
+    inc = _get_incident_or_404(incident_id, db)
+
+    events = (
+        db.query(IncidentEventModel)
+        .options(joinedload(IncidentEventModel.alert))
+        .filter(IncidentEventModel.incident_id == inc.id)
+        .order_by(IncidentEventModel.created_at.asc())
+        .all()
+    )
+
+    related_alerts: List[IncidentRelatedAlertResponse] = []
+    for evt in events:
+        alt = evt.alert
+        if alt:
+            related_alerts.append(
+                IncidentRelatedAlertResponse(
+                    id=alt.id,
+                    alert_id=alt.id,
+                    event_id=evt.id,
+                    incident_id=inc.id,
+                    service=alt.service,
+                    metric=alt.metric,
+                    value=alt.value,
+                    threshold=alt.threshold,
+                    severity=alt.severity,
+                    message=alt.message,
+                    status=alt.status,
+                    source=alt.source,
+                    timestamp=alt.timestamp,
+                    created_at=evt.created_at,
+                    event_type=evt.event_type or "ALERT_ATTACHED",
+                    actor=evt.actor,
+                )
+            )
+        elif evt.alert_id:
+            alt = db.query(AlertModel).filter(AlertModel.id == evt.alert_id).first()
+            if alt:
+                related_alerts.append(
+                    IncidentRelatedAlertResponse(
+                        id=alt.id,
+                        alert_id=alt.id,
+                        event_id=evt.id,
+                        incident_id=inc.id,
+                        service=alt.service,
+                        metric=alt.metric,
+                        value=alt.value,
+                        threshold=alt.threshold,
+                        severity=alt.severity,
+                        message=alt.message,
+                        status=alt.status,
+                        source=alt.source,
+                        timestamp=alt.timestamp,
+                        created_at=evt.created_at,
+                        event_type=evt.event_type or "ALERT_ATTACHED",
+                        actor=evt.actor,
+                    )
+                )
+            else:
+                m_data = evt.event_data or {}
+                related_alerts.append(
+                    IncidentRelatedAlertResponse(
+                        id=evt.id,
+                        alert_id=evt.alert_id,
+                        event_id=evt.id,
+                        incident_id=inc.id,
+                        service=inc.service_name or "system",
+                        metric=m_data.get("metric", "system"),
+                        value=m_data.get("value", 0.0),
+                        threshold=0.0,
+                        severity=inc.severity,
+                        message=evt.description or f"Alert #{evt.alert_id}",
+                        status="ACTIVE",
+                        source="event-stream",
+                        timestamp=evt.created_at,
+                        created_at=evt.created_at,
+                        event_type=evt.event_type,
+                        actor=evt.actor,
+                    )
+                )
+        else:
+            m_data = evt.event_data or {}
+            related_alerts.append(
+                IncidentRelatedAlertResponse(
+                    id=evt.id,
+                    alert_id=None,
+                    event_id=evt.id,
+                    incident_id=inc.id,
+                    service=inc.service_name or "system",
+                    metric=m_data.get("metric", "system"),
+                    value=m_data.get("value", 0.0),
+                    threshold=0.0,
+                    severity=inc.severity,
+                    message=evt.description or "Timeline event",
+                    status="ACTIVE",
+                    source=evt.actor or "event-stream",
+                    timestamp=evt.created_at,
+                    created_at=evt.created_at,
+                    event_type=evt.event_type,
+                    actor=evt.actor,
+                )
+            )
+
+    # Fallback to affected_events JSON if no relational events logged
+    if not related_alerts and inc.affected_events:
+        for idx, a_dict in enumerate(inc.affected_events):
+            a_id = a_dict.get("id") or (idx + 1)
+            related_alerts.append(
+                IncidentRelatedAlertResponse(
+                    id=a_id,
+                    alert_id=a_id,
+                    event_id=idx + 1,
+                    incident_id=inc.id,
+                    service=a_dict.get("service", inc.service_name),
+                    metric=a_dict.get("metric", "system"),
+                    value=a_dict.get("value", 0.0),
+                    threshold=a_dict.get("threshold", 0.0),
+                    severity=a_dict.get("severity", inc.severity),
+                    message=a_dict.get("message", f"Breach on {a_dict.get('metric')}"),
+                    status=a_dict.get("status", "ACTIVE"),
+                    source=a_dict.get("source", "simulation"),
+                    timestamp=inc.created_at,
+                    created_at=inc.created_at,
+                    event_type="ALERT_ATTACHED",
+                    actor="EventCorrelationEngine",
+                )
+            )
+
+    return related_alerts
+
+
+@router.get("/{incident_id}/recommendations", response_model=List[RecommendationResponse], summary="Get Incident Recommended Actions")
+def get_incident_recommendations(incident_id: str, db: Session = Depends(get_sync_db)):
+    """
+    Returns recommended actions for remediation of the specified incident.
+    """
+    inc = _get_incident_or_404(incident_id, db)
+
+    recs = (
+        db.query(IncidentRecommendationModel)
+        .filter(IncidentRecommendationModel.incident_id == inc.id)
+        .order_by(IncidentRecommendationModel.created_at.desc())
+        .all()
+    )
+
+    # Auto-synthesize recommendations from AI RCA if not yet persisted
+    if not recs:
+        meta = inc.metadata_json or {}
+        rca_actions = meta.get("ai_root_cause_analysis", {}).get("recommended_actions") or []
+        if not rca_actions and inc.ai_remediation:
+            rca_actions = [inc.ai_remediation]
+
+        if rca_actions:
+            for idx, act in enumerate(rca_actions):
+                rec = IncidentRecommendationModel(
+                    incident_id=inc.id,
+                    action=str(act),
+                    priority="HIGH" if idx == 0 else "MEDIUM",
+                    status="PENDING",
+                    title=f"Action: {act[:40]}...",
+                    description=str(act),
+                )
+                db.add(rec)
+            db.commit()
+            recs = (
+                db.query(IncidentRecommendationModel)
+                .filter(IncidentRecommendationModel.incident_id == inc.id)
+                .all()
+            )
+
+    return recs
 
 
 @router.post("", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED, summary="Create Incident")
@@ -152,34 +341,36 @@ async def create_incident(payload: IncidentCreate, db: Session = Depends(get_syn
     return new_inc
 
 
-@router.post("/{incident_id}/investigate", response_model=IncidentDetailResponse, summary="Investigate Incident")
+@router.post("/{incident_id}/investigate", response_model=IncidentDetailResponse, summary="Start AI Investigation")
 async def investigate_incident(
     incident_id: str,
-    payload: IncidentInvestigateRequest = IncidentInvestigateRequest(),
+    payload: Optional[IncidentInvestigateRequest] = None,
     db: Session = Depends(get_sync_db),
 ):
-    """Transitions incident status to INVESTIGATING and triggers AI root cause analysis."""
-    inc = db.query(IncidentModel).filter(IncidentModel.id == incident_id).first()
-    if not inc:
-        raise ResourceNotFoundError("Incident", incident_id)
+    """
+    Starts automated AI investigation for the incident.
+    Transitions status to INVESTIGATING and triggers AI root cause analysis.
+    """
+    inc = _get_incident_or_404(incident_id, db)
+    req = payload or IncidentInvestigateRequest()
 
     now = datetime.now(timezone.utc)
     inc.status = "INVESTIGATING"
     inc.updated_at = now
 
     investigate_event = IncidentEventModel(
-        incident_id=incident_id,
+        incident_id=inc.id,
         event_type="INCIDENT_INVESTIGATING",
-        description=payload.investigation_notes,
-        actor=payload.actor,
+        description=req.investigation_notes,
+        actor=req.actor,
     )
     db.add(investigate_event)
 
     audit = AuditLogModel(
         action="INCIDENT_INVESTIGATING",
-        actor=payload.actor,
-        target=incident_id,
-        details=payload.investigation_notes,
+        actor=req.actor,
+        target=inc.id,
+        details=req.investigation_notes,
     )
     db.add(audit)
     db.commit()
@@ -188,7 +379,7 @@ async def investigate_incident(
     try:
         from aegisops.ai.rca import IncidentInvestigator
         investigator = IncidentInvestigator()
-        await investigator.investigate(incident_id=incident_id, db=db, persist=True)
+        await investigator.investigate(incident_id=inc.id, db=db, persist=True)
     except Exception as e:
         logger.debug("Failed to run automated RCA on investigation: %s", e)
 
@@ -206,13 +397,15 @@ async def investigate_incident(
 @router.post("/{incident_id}/resolve", response_model=IncidentDetailResponse, summary="Resolve Incident")
 async def resolve_incident(
     incident_id: str,
-    payload: IncidentResolveRequest = IncidentResolveRequest(),
+    payload: Optional[IncidentResolveRequest] = None,
     db: Session = Depends(get_sync_db),
 ):
-    """Resolves an open or investigating incident and logs an audit trail event."""
-    inc = db.query(IncidentModel).filter(IncidentModel.id == incident_id).first()
-    if not inc:
-        raise ResourceNotFoundError("Incident", incident_id)
+    """
+    Resolves an open or investigating incident.
+    Transitions status to RESOLVED and records resolution timestamp.
+    """
+    inc = _get_incident_or_404(incident_id, db)
+    req = payload or IncidentResolveRequest()
 
     now = datetime.now(timezone.utc)
     inc.status = "RESOLVED"
@@ -220,18 +413,18 @@ async def resolve_incident(
     inc.updated_at = now
 
     resolve_event = IncidentEventModel(
-        incident_id=incident_id,
+        incident_id=inc.id,
         event_type="INCIDENT_RESOLVED",
-        description=payload.resolution_notes,
-        actor=payload.actor,
+        description=req.resolution_notes,
+        actor=req.actor,
     )
     db.add(resolve_event)
 
     audit = AuditLogModel(
         action="INCIDENT_RESOLVED",
-        actor=payload.actor,
-        target=incident_id,
-        details=payload.resolution_notes,
+        actor=req.actor,
+        target=inc.id,
+        details=req.resolution_notes,
     )
     db.add(audit)
 
@@ -250,31 +443,33 @@ async def resolve_incident(
 @router.post("/{incident_id}/close", response_model=IncidentDetailResponse, summary="Close Incident")
 async def close_incident(
     incident_id: str,
-    payload: IncidentCloseRequest = IncidentCloseRequest(),
+    payload: Optional[IncidentCloseRequest] = None,
     db: Session = Depends(get_sync_db),
 ):
-    """Closes an incident and logs an audit trail event."""
-    inc = db.query(IncidentModel).filter(IncidentModel.id == incident_id).first()
-    if not inc:
-        raise ResourceNotFoundError("Incident", incident_id)
+    """
+    Closes an incident ticket.
+    Transitions status to CLOSED and logs an audit trail event.
+    """
+    inc = _get_incident_or_404(incident_id, db)
+    req = payload or IncidentCloseRequest()
 
     now = datetime.now(timezone.utc)
     inc.status = "CLOSED"
     inc.updated_at = now
 
     close_event = IncidentEventModel(
-        incident_id=incident_id,
+        incident_id=inc.id,
         event_type="INCIDENT_CLOSED",
-        description=payload.closure_notes,
-        actor=payload.actor,
+        description=req.closure_notes,
+        actor=req.actor,
     )
     db.add(close_event)
 
     audit = AuditLogModel(
         action="INCIDENT_CLOSED",
-        actor=payload.actor,
-        target=incident_id,
-        details=payload.closure_notes,
+        actor=req.actor,
+        target=inc.id,
+        details=req.closure_notes,
     )
     db.add(audit)
 
@@ -290,7 +485,7 @@ async def close_incident(
     return _map_incident_detail(inc)
 
 
-@router.post("/{incident_id}/analyze", summary="Trigger AI Root Cause Analysis")
+@router.post("/{incident_id}/analyze", summary="Trigger Deep AI Root Cause Analysis")
 async def trigger_incident_rca(
     incident_id: str,
     db: Session = Depends(get_sync_db),
@@ -301,12 +496,10 @@ async def trigger_incident_rca(
     invokes the AI provider (MockAIProvider or LLMProvider), and persists the findings.
     """
     from aegisops.ai.rca import IncidentInvestigator
-    inc = db.query(IncidentModel).filter(IncidentModel.id == incident_id).first()
-    if not inc:
-        raise ResourceNotFoundError("Incident", incident_id)
+    inc = _get_incident_or_404(incident_id, db)
 
     investigator = IncidentInvestigator()
-    analysis = await investigator.investigate(incident_id=incident_id, db=db, persist=True)
+    analysis = await investigator.investigate(incident_id=inc.id, db=db, persist=True)
     if not analysis:
         raise ResourceNotFoundError("Incident Context", incident_id)
 
@@ -319,7 +512,7 @@ async def trigger_incident_rca(
         logger.debug("Failed to broadcast analyzed incident: %s", exc)
 
     return {
-        "incident_id": incident_id,
+        "incident_id": inc.id,
         "analysis": analysis.to_dict(),
         "incident": _map_incident_detail(inc),
     }

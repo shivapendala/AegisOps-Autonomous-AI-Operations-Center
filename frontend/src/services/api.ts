@@ -47,6 +47,18 @@ export async function fetchIncidentDetails(incidentId: string): Promise<Incident
   return res.json();
 }
 
+export async function fetchIncidentEvents(incidentId: string): Promise<any[]> {
+  const res = await fetch(`${API_BASE}/incidents/${incidentId}/events`);
+  if (!res.ok) throw new Error(`Fetch incident events failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchIncidentRecommendations(incidentId: string): Promise<any[]> {
+  const res = await fetch(`${API_BASE}/incidents/${incidentId}/recommendations`);
+  if (!res.ok) throw new Error(`Fetch incident recommendations failed: ${res.statusText}`);
+  return res.json();
+}
+
 export async function investigateIncident(incidentId: string, notes?: string): Promise<Incident> {
   const res = await fetch(`${API_BASE}/incidents/${incidentId}/investigate`, {
     method: 'POST',
