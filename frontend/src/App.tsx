@@ -3,7 +3,7 @@ import { Navbar } from './components/Navbar';
 import { SummaryCards } from './components/SummaryCards';
 import { TelemetryCharts, TelemetryDataPoint } from './components/TelemetryCharts';
 import { ActiveAlertsTable } from './components/ActiveAlertsTable';
-import { ActiveIncidentsPanel } from './components/ActiveIncidentsPanel';
+import { IncidentsTable } from './components/IncidentsTable';
 import { RecentEventsTimeline } from './components/RecentEventsTimeline';
 import { SystemHealthIndicator } from './components/SystemHealthIndicator';
 import { ServicesCatalog } from './components/ServicesCatalog';
@@ -483,12 +483,12 @@ export const App: React.FC = () => {
           alerts={alerts}
         />
 
-        {/* SECTION 8: Active Incidents Panel (Triage, AI Root Cause, Severity, Actions) */}
-        <ActiveIncidentsPanel
+        {/* SECTION 8: Incidents Table (ID, Service, Severity, Status) */}
+        <IncidentsTable
           incidents={incidents}
+          onSelectIncident={handleSelectIncident}
           onResolve={handleResolveIncident}
           onSimulateDrill={handleSimulateDrill}
-          onSelectIncident={handleSelectIncident}
           loading={loading}
         />
 

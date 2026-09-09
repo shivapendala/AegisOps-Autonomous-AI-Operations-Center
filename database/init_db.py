@@ -166,30 +166,76 @@ def seed_initial_data(db: Session) -> None:
     db.flush()
 
     # 5. Seed Incidents with Events & Recommendations
-    incident_id = "INC-PAY-8821"
     incident_1 = IncidentModel(
-        id=incident_id,
+        id="INC-101",
         service_id=svc_payment.id,
-        title="Payment Gateway Connection Degradation",
-        description="Sustained P99 latency elevation and sporadic downstream connection timeouts.",
-        severity="HIGH",
-        status="INVESTIGATING",
-        correlation_score=92.0,
-        probable_cause="Database connection pool exhaustion and downstream gateway saturation.",
-        confidence_score=0.91,
-        root_cause="Downstream bank gateway handshake latency and connection pool bottleneck.",
-        impact_summary="Up to 4.8% of checkout authorizations experiencing high latency.",
-        ai_remediation="Activate secondary failover gateway route and scale connection pool buffer.",
+        title="Payment API Degradation",
+        description="Sustained P99 latency elevation, database connection saturation, and HTTP 500 surge.",
+        severity="CRITICAL",
+        status="OPEN",
+        correlation_score=91.0,
+        probable_cause="Database connection pool exhaustion",
+        confidence_score=91.0,
+        root_cause="Database connection pool exhaustion",
+        impact_summary="Payment API requests are experiencing failures because database connections are saturated.",
+        ai_remediation="Check database connection pool, inspect long-running queries, and review deployments.",
         anomaly_score=-0.285,
-        metadata_json={"impacted_users_estimate": 140, "region": "us-east"},
+        metadata_json={
+            "ai_root_cause_analysis": {
+                "probable_cause": "Database connection pool exhaustion",
+                "confidence_score": 91.0,
+                "evidence": [
+                    "DB connections reached 96%",
+                    "API latency increased to 2.8 seconds",
+                    "HTTP 500 errors increased",
+                    "Payment requests timed out"
+                ],
+                "recommended_actions": [
+                    "Check database connection pool",
+                    "Inspect long-running queries",
+                    "Check database CPU and memory",
+                    "Review recent Payment API deployments"
+                ]
+            }
+        },
     )
-    db.add(incident_1)
+
+    incident_2 = IncidentModel(
+        id="INC-102",
+        service_id=svc_auth.id,
+        title="Auth API High Latency",
+        description="JWT token verification latency spike during cache failover.",
+        severity="HIGH",
+        status="RESOLVED",
+        correlation_score=85.0,
+        probable_cause="Redis cache token eviction storm",
+        confidence_score=88.0,
+        root_cause="Redis cache token eviction storm",
+        impact_summary="Token verification latency temporarily elevated prior to Redis replica warm-up.",
+        ai_remediation="Flushed cache keyspace buffers and scaled replica nodes.",
+        resolved_at=datetime.now(timezone.utc),
+        metadata_json={
+            "ai_root_cause_analysis": {
+                "probable_cause": "Redis cache token eviction storm",
+                "confidence_score": 88.0,
+                "evidence": [
+                    "JWT verification latency spiked to 240ms",
+                    "Redis cache hit ratio dropped to 62%"
+                ],
+                "recommended_actions": [
+                    "Scale Redis cache replicas",
+                    "Verify JWT cache TTLs"
+                ]
+            }
+        },
+    )
+    db.add_all([incident_1, incident_2])
     db.flush()
 
     # Incident Events Timeline (Connecting Alerts to Incidents)
     events = [
         IncidentEventModel(
-            incident_id=incident_id,
+            incident_id="INC-101",
             alert_id=alert_1.id,
             event_type="ALERT_ATTACHED",
             description=f"Alert #{alert_1.id} ({alert_1.metric}) connected to incident",
@@ -197,7 +243,7 @@ def seed_initial_data(db: Session) -> None:
             event_data={"metric": "latency_p99", "observed": 845.0},
         ),
         IncidentEventModel(
-            incident_id=incident_id,
+            incident_id="INC-101",
             alert_id=alert_2.id,
             event_type="ALERT_ATTACHED",
             description=f"Alert #{alert_2.id} ({alert_2.metric}) connected to incident",
@@ -205,18 +251,25 @@ def seed_initial_data(db: Session) -> None:
             event_data={"metric": "error_rate_5xx", "observed": 4.8},
         ),
         IncidentEventModel(
-            incident_id=incident_id,
+            incident_id="INC-101",
             event_type="INCIDENT_OPENED",
             description="Autonomous incident ticket generated and triage sequence initiated.",
             actor="AegisOps-Autopilot",
-            event_data={"severity": "HIGH"},
+            event_data={"severity": "CRITICAL"},
         ),
         IncidentEventModel(
-            incident_id=incident_id,
-            event_type="ROOT_CAUSE_ANALYSIS",
-            description="LLM reasoning engine identified downstream connection saturation.",
-            actor="BaseLLMService[mock]",
-            event_data={"confidence": 0.91},
+            incident_id="INC-101",
+            event_type="AI_RCA_COMPLETED",
+            description="AI Root Cause Analysis completed: Database connection pool exhaustion (91% confidence).",
+            actor="MockAIProvider",
+            event_data={"confidence": 91.0},
+        ),
+        IncidentEventModel(
+            incident_id="INC-102",
+            event_type="INCIDENT_RESOLVED",
+            description="Auth API latency recovered and Redis replica cache normalized.",
+            actor="Operations Console",
+            event_data={"status": "RESOLVED"},
         ),
     ]
     db.add_all(events)
@@ -224,26 +277,59 @@ def seed_initial_data(db: Session) -> None:
     # Incident Recommendations
     recs = [
         IncidentRecommendationModel(
-            incident_id=incident_id,
-            action="Check database connection pool and scale capacity from 50 to 120",
+            incident_id="INC-101",
+            action="Check database connection pool",
             priority="HIGH",
             status="PENDING",
-            title="Expand Connection Pool Capacity",
-            description="Dynamically increase max_connections from 50 to 120 on payments worker pods.",
+            title="Check database connection pool",
+            description="Inspect active connections and increase max pool limit if saturated.",
             action_type="CONFIG_SCALE",
             confidence=0.91,
-            generated_by="AegisOps-AI-LLM",
+            generated_by="MockAIProvider",
         ),
         IncidentRecommendationModel(
-            incident_id=incident_id,
-            action="Reroute transactions to standby payment provider route",
+            incident_id="INC-101",
+            action="Inspect long-running queries",
             priority="HIGH",
             status="PENDING",
-            title="Reroute Transactions to Standby Payment Provider",
-            description="Shift 50% of card checkout traffic to secondary payment processor endpoint to relieve pool queue.",
-            action_type="TRAFFIC_REROUTE",
-            confidence=0.94,
-            generated_by="AegisOps-AI-LLM",
+            title="Inspect long-running queries",
+            description="Identify unindexed queries causing connection locks.",
+            action_type="QUERY_AUDIT",
+            confidence=0.89,
+            generated_by="MockAIProvider",
+        ),
+        IncidentRecommendationModel(
+            incident_id="INC-101",
+            action="Check database CPU and memory",
+            priority="MEDIUM",
+            status="PENDING",
+            title="Check database CPU and memory",
+            description="Verify database host resource headroom.",
+            action_type="RESOURCE_AUDIT",
+            confidence=0.82,
+            generated_by="MockAIProvider",
+        ),
+        IncidentRecommendationModel(
+            incident_id="INC-101",
+            action="Review recent Payment API deployments",
+            priority="MEDIUM",
+            status="PENDING",
+            title="Review recent Payment API deployments",
+            description="Audit recent service deployments and database migration commits.",
+            action_type="DEPLOYMENT_AUDIT",
+            confidence=0.78,
+            generated_by="MockAIProvider",
+        ),
+        IncidentRecommendationModel(
+            incident_id="INC-102",
+            action="Scale Redis cache replicas",
+            priority="HIGH",
+            status="EXECUTED",
+            title="Scale Redis cache replicas",
+            description="Scale Redis cache replicas to prevent cache misses on JWT token verification.",
+            action_type="CONFIG_SCALE",
+            confidence=0.88,
+            generated_by="MockAIProvider",
         ),
     ]
     db.add_all(recs)
