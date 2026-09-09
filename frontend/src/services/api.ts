@@ -148,3 +148,60 @@ export async function resetSimulation(): Promise<any> {
   if (!res.ok) throw new Error(`Reset simulation failed: ${res.statusText}`);
   return res.json();
 }
+
+export async function triggerPaymentFailure(): Promise<any> {
+  const res = await fetch(`${API_BASE}/simulation/payment-failure`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Trigger payment failure failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function approveRecommendation(
+  incidentId: string,
+  recId: number,
+  operator = 'Human Operator',
+  notes = 'Approved via Incident Details Console'
+): Promise<any> {
+  const res = await fetch(`${API_BASE}/incidents/${incidentId}/recommendations/${recId}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operator, notes }),
+  });
+  if (!res.ok) throw new Error(`Approve recommendation failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function rejectRecommendation(
+  incidentId: string,
+  recId: number,
+  operator = 'Human Operator',
+  reason = 'Rejected via Incident Details Console'
+): Promise<any> {
+  const res = await fetch(`${API_BASE}/incidents/${incidentId}/recommendations/${recId}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operator, reason }),
+  });
+  if (!res.ok) throw new Error(`Reject recommendation failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function executeRecommendation(
+  incidentId: string,
+  recId: number,
+  operator = 'Human Operator',
+  executionNotes = 'Executed with operator authorization'
+): Promise<any> {
+  const res = await fetch(`${API_BASE}/incidents/${incidentId}/recommendations/${recId}/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operator, execution_notes: executionNotes }),
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Execute recommendation failed: ${res.statusText}`);
+  }
+  return res.json();
+}

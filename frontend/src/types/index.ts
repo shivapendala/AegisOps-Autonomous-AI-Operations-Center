@@ -64,6 +64,7 @@ export interface Incident {
   status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'CLOSED';
   root_cause?: string;
   probable_cause?: string;
+  confidence_score?: number;
   impact_summary?: string;
   ai_remediation?: string;
   anomaly_score?: number;
@@ -86,10 +87,11 @@ export interface Incident {
   }>;
   recommendations?: Array<{
     id: number;
-    title: string;
-    description: string;
-    action_type: string;
-    confidence: number;
+    title?: string;
+    action?: string;
+    description?: string;
+    action_type?: string;
+    confidence?: number;
     priority: string;
     status: string;
   }>;

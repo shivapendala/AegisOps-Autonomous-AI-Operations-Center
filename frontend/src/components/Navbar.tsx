@@ -9,6 +9,7 @@ interface NavbarProps {
   systemStatus: 'OPERATIONAL' | 'DEGRADED' | 'CRITICAL';
   onRefresh: () => void;
   loading: boolean;
+  onNavigateHome?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -18,6 +19,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   systemStatus,
   onRefresh,
   loading,
+  onNavigateHome,
 }) => {
   const renderConnectionBadge = () => {
     switch (connectionState) {
@@ -95,7 +97,10 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="border-b border-red-200 bg-white/95 backdrop-blur-md sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand Logo & Title */}
-        <div className="flex items-center space-x-3">
+        <div
+          onClick={onNavigateHome}
+          className={`flex items-center space-x-3 ${onNavigateHome ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
+        >
           <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-red-600 via-rose-500 to-red-500 flex items-center justify-center shadow-md shadow-red-500/20">
             <Shield className="h-6 w-6 text-white stroke-[2.5]" />
           </div>
