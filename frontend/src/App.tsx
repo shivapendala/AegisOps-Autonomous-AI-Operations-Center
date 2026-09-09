@@ -8,6 +8,7 @@ import { RecentEventsTimeline } from './components/RecentEventsTimeline';
 import { SystemHealthIndicator } from './components/SystemHealthIndicator';
 import { ServicesCatalog } from './components/ServicesCatalog';
 import { IncidentDetailsModal } from './components/IncidentDetailsModal';
+import { IncidentDetailsPage } from './components/IncidentDetailsPage';
 import { SimulationControls } from './components/SimulationControls';
 import { SimulatedServicesGrid } from './components/SimulatedServicesGrid';
 import {
@@ -16,7 +17,6 @@ import {
   fetchAlerts,
   fetchServices,
   fetchIncidents,
-  fetchIncidentDetails,
   resolveIncident,
   triggerManualIncident,
   fetchSimulationStatus,
@@ -50,8 +50,26 @@ export const App: React.FC = () => {
   const [toastNotice, setToastNotice] = useState<string | null>(null);
   const [activeScenario, setActiveScenario] = useState<string>('NORMAL');
   const [simulatedServices, setSimulatedServices] = useState<SimulatedService[]>([]);
+  const [currentPath, setCurrentPath] = useState<string>(
+    typeof window !== 'undefined' ? window.location.pathname : '/'
+  );
 
   const socketRef = useRef<MonitoringSocket | null>(null);
+
+  // Synchronize route changes via popstate
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateTo = useCallback((path: string) => {
+    window.history.pushState(null, '', path);
+    setCurrentPath(path);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   // Append incoming telemetry snapshot to rolling chart history
   const appendTelemetryPoint = useCallback((t: SystemTelemetry) => {
@@ -321,13 +339,8 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleSelectIncident = async (inc: Incident) => {
-    try {
-      const detailed = await fetchIncidentDetails(inc.id);
-      setSelectedIncident(detailed);
-    } catch {
-      setSelectedIncident(inc);
-    }
+  const handleSelectIncident = (inc: Incident) => {
+    navigateTo(`/incidents/${inc.id}`);
   };
 
   const handleIncidentUpdated = (updated: Incident) => {
@@ -376,6 +389,35 @@ export const App: React.FC = () => {
     }
   };
 
+  // Route matching for /incidents/:id
+  const incidentRouteMatch = currentPath.match(/^\/incidents\/([^/]+)/);
+  if (incidentRouteMatch) {
+    const routeIncidentId = incidentRouteMatch[1];
+    return (
+      <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col font-sans">
+        <Navbar
+          health={health}
+          connectionState={connectionState}
+          reconnectDelay={reconnectDelay}
+          systemStatus={systemStatus}
+          onRefresh={loadInitialData}
+          loading={loading}
+          onNavigateHome={() => navigateTo('/')}
+        />
+        <main className="flex-1">
+          <IncidentDetailsPage
+            incidentId={routeIncidentId}
+            onBack={() => navigateTo('/')}
+            onIncidentUpdated={handleIncidentUpdated}
+          />
+        </main>
+        <footer className="border-t border-red-100 bg-white py-4 text-center text-xs text-slate-500 font-mono shadow-sm">
+          AegisOps Autonomous AI Operations Center &copy; 2026. Real-time Streaming via WebSocket.
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col font-sans">
       {/* SECTION 1: Top Navigation (Logo, System Status, WebSocket Status) */}
@@ -386,6 +428,7 @@ export const App: React.FC = () => {
         systemStatus={systemStatus}
         onRefresh={loadInitialData}
         loading={loading}
+        onNavigateHome={() => navigateTo('/')}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
