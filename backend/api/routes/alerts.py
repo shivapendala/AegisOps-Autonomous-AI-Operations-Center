@@ -36,6 +36,21 @@ def list_alerts(
     return alerts
 
 
+@router.get("/active", response_model=List[AlertResponse], summary="Get Active Operational Alerts")
+def get_active_alerts(
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_sync_db),
+):
+    """Retrieves all currently active operational alerts."""
+    return (
+        db.query(AlertModel)
+        .filter(AlertModel.status == "ACTIVE")
+        .order_by(AlertModel.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
 @router.get("/{alert_id}", response_model=AlertResponse, summary="Get Alert Details")
 def get_alert(alert_id: int, db: Session = Depends(get_sync_db)):
     """Retrieves specific alert information."""

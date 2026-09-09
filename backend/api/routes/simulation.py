@@ -64,3 +64,21 @@ def reset_simulation():
     """Recovers the entire system back to clean healthy NORMAL baseline."""
     result = simulation_engine.set_scenario("NORMAL")
     return result
+
+
+@router.post("/high-cpu", response_model=SimulationStatusResponse, summary="Trigger High CPU Simulation Drill")
+def trigger_high_cpu():
+    """Triggers severe CPU utilization overload drill across monitored services."""
+    return simulation_engine.set_scenario("HIGH_CPU")
+
+
+@router.post("/high-memory", response_model=SimulationStatusResponse, summary="Trigger High Memory Simulation Drill")
+def trigger_high_memory():
+    """Triggers memory saturation and database connection pressure drill."""
+    return simulation_engine.set_scenario("HIGH_MEMORY")
+
+
+@router.post("/high-disk", response_model=SimulationStatusResponse, summary="Trigger High Disk Simulation Drill")
+def trigger_high_disk():
+    """Triggers disk volume saturation and storage threshold breach drill."""
+    return simulation_engine.set_scenario("HIGH_DISK")
