@@ -55,6 +55,8 @@ logger = logging.getLogger("aegisops.monitoring.simulation")
 class FailureScenario(str, Enum):
     NORMAL = "NORMAL"
     HIGH_CPU = "HIGH_CPU"
+    HIGH_MEMORY = "HIGH_MEMORY"
+    HIGH_DISK = "HIGH_DISK"
     DATABASE_OVERLOAD = "DATABASE_OVERLOAD"
     API_LATENCY_SPIKE = "API_LATENCY_SPIKE"
     ERROR_RATE_SPIKE = "ERROR_RATE_SPIKE"
@@ -217,6 +219,12 @@ class SimulationEngine:
                 "CPU": FailureScenario.HIGH_CPU,
                 "CPU_SPIKE": FailureScenario.HIGH_CPU,
                 "HIGH_CPU": FailureScenario.HIGH_CPU,
+                "HIGH_MEMORY": FailureScenario.HIGH_MEMORY,
+                "MEMORY": FailureScenario.HIGH_MEMORY,
+                "MEMORY_SPIKE": FailureScenario.HIGH_MEMORY,
+                "HIGH_DISK": FailureScenario.HIGH_DISK,
+                "DISK": FailureScenario.HIGH_DISK,
+                "DISK_SPIKE": FailureScenario.HIGH_DISK,
                 "DB": FailureScenario.DATABASE_OVERLOAD,
                 "DATABASE_OVERLOAD": FailureScenario.DATABASE_OVERLOAD,
                 "DATABASE": FailureScenario.DATABASE_OVERLOAD,
@@ -308,6 +316,49 @@ class SimulationEngine:
                 })
             elif svc_name in ["Payment API", "PostgreSQL Database"]:
                 cpu = min(cpu + 15.0, 75.0)
+
+        # -------------------------------------------------------------
+        # SCENARIO: HIGH_MEMORY (Severe RAM exhaustion)
+        # -------------------------------------------------------------
+        elif self.active_scenario == FailureScenario.HIGH_MEMORY:
+            if svc_name in ["Payment API", "Order Service"]:
+                memory = 94.2 + random.uniform(-1.0, 2.5)
+                cpu = min(cpu + 20.0, 85.0)
+                status = "CRITICAL"
+                alerts.append({
+                    "id": f"ALT-SIM-MEM-{uuid.uuid4().hex[:6].upper()}",
+                    "service": svc_name,
+                    "service_id": svc_id,
+                    "metric": "memory_usage",
+                    "value": round(memory, 2),
+                    "threshold": 90.0,
+                    "severity": "CRITICAL",
+                    "message": f"[DEMO/SIMULATION] Memory exhaustion breach on {svc_name}: {memory:.1f}% (threshold: 90.0%)",
+                    "timestamp": now,
+                    "status": "ACTIVE",
+                })
+            else:
+                memory = min(memory + 25.0, 82.0)
+
+        # -------------------------------------------------------------
+        # SCENARIO: HIGH_DISK (Storage volume saturation)
+        # -------------------------------------------------------------
+        elif self.active_scenario == FailureScenario.HIGH_DISK:
+            if svc_name in ["PostgreSQL Database", "Order Service"]:
+                db_conn = min(db_conn + 25.0, 88.0)
+                status = "CRITICAL"
+                alerts.append({
+                    "id": f"ALT-SIM-DISK-{uuid.uuid4().hex[:6].upper()}",
+                    "service": svc_name,
+                    "service_id": svc_id,
+                    "metric": "disk_usage",
+                    "value": 93.8,
+                    "threshold": 90.0,
+                    "severity": "CRITICAL",
+                    "message": f"[DEMO/SIMULATION] Disk storage critical volume saturation on {svc_name}: 93.8% (threshold: 90.0%)",
+                    "timestamp": now,
+                    "status": "ACTIVE",
+                })
 
         # -------------------------------------------------------------
         # 2. SCENARIO: DATABASE_OVERLOAD (PostgreSQL Database saturation)
