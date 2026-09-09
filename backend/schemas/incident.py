@@ -19,14 +19,20 @@ class IncidentEventResponse(BaseModel):
 
 class IncidentBase(BaseModel):
     service_id: Optional[int] = None
+    service: Optional[str] = None
+    service_name: Optional[str] = None
     title: str = Field(..., max_length=255)
     description: Optional[str] = None
     severity: str = "MEDIUM"
     status: str = "OPEN"
     root_cause: Optional[str] = None
+    probable_cause: Optional[str] = None
     impact_summary: Optional[str] = None
     ai_remediation: Optional[str] = None
     anomaly_score: Optional[float] = None
+    correlation_score: Optional[float] = 100.0
+    affected_metrics: Optional[List[str]] = []
+    affected_events: Optional[List[Dict[str, Any]]] = []
     metadata_json: Optional[Dict[str, Any]] = None
 
 
@@ -41,7 +47,6 @@ class IncidentResolveRequest(BaseModel):
 
 class IncidentResponse(IncidentBase):
     id: str
-    service_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     resolved_at: Optional[datetime] = None
