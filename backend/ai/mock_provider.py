@@ -37,22 +37,73 @@ class MockAIProvider(AIProvider):
         """
         info = investigation.incident_info or {}
         title = info.get("title", "").lower()
-        service = str(info.get("service", "") or info.get("service_name", "")).lower()
+        
+        # 1. Resolve Service Information
+        svc_str = ""
+        if isinstance(investigation.service_info, dict):
+            svc_str = str(investigation.service_info.get("name") or investigation.service_info.get("service") or "")
+        elif isinstance(investigation.service_info, str):
+            svc_str = investigation.service_info
+        if not svc_str:
+            svc_str = str(info.get("service") or info.get("service_name") or "")
+        service_lower = svc_str.lower()
+
+        # 2. Extract Alerts
         alerts = investigation.correlated_alerts or []
         affected_metrics = set(info.get("affected_metrics") or [])
 
-        # Collect metrics from alerts
-        for a in alerts:
-            m = str(a.get("metric", "")).lower()
-            if m:
-                affected_metrics.add(m)
+        # 3. Extract and normalize Metrics from both recent_metrics and correlated_alerts
+        metric_values: Dict[str, float] = {}
 
-        # 1. Primary Scenario: Database Connection Pool Exhaustion / Payment API Cascade
-        is_payment_api = "payment" in service or "payment" in title
+        # From recent_metrics (handles both dict and list format)
+        if isinstance(investigation.recent_metrics, dict):
+            for k, v in investigation.recent_metrics.items():
+                try:
+                    norm_k = str(k).lower().replace("-", "_").replace(" ", "_").strip()
+                    metric_values[norm_k] = float(v)
+                    affected_metrics.add(norm_k)
+                except (ValueError, TypeError):
+                    pass
+        elif isinstance(investigation.recent_metrics, list):
+            for m in investigation.recent_metrics:
+                if isinstance(m, dict):
+                    raw_name = m.get("metric_name") or m.get("metric") or m.get("name") or ""
+                    norm_k = str(raw_name).lower().replace("-", "_").replace(" ", "_").strip()
+                    try:
+                        metric_values[norm_k] = float(m.get("value", 0.0))
+                        affected_metrics.add(norm_k)
+                    except (ValueError, TypeError):
+                        pass
+
+        # From correlated_alerts
+        for a in alerts:
+            if isinstance(a, dict):
+                raw_name = a.get("metric") or a.get("metric_name") or ""
+                norm_k = str(raw_name).lower().replace("-", "_").replace(" ", "_").strip()
+                if norm_k:
+                    affected_metrics.add(norm_k)
+                try:
+                    metric_values[norm_k] = float(a.get("value", 0.0))
+                except (ValueError, TypeError):
+                    pass
+
+        # Helper to query metric values
+        def get_metric_val(*keywords, default=None):
+            for k, val in metric_values.items():
+                for kw in keywords:
+                    if kw.lower() in k:
+                        return val
+            return default
+
+        # 1. Primary Scenario: Database Connection Pool Exhaustion (Payment API cascade)
+        is_payment_api = "payment" in service_lower or "payment" in title
         has_db = any("db" in m or "database" in m or "connection" in m or "query" in m for m in affected_metrics)
         has_latency = any("latenc" in m or "timeout" in m for m in affected_metrics)
         has_http_500 = any("500" in m or "error" in m for m in affected_metrics)
         has_cpu = any("cpu" in m for m in affected_metrics)
+
+        db_val = get_metric_val("db", "database", "connection", default=96.0)
+        lat_val = get_metric_val("latenc", "timeout", default=2.8)
 
         if (is_payment_api and (has_db or has_latency)) or (has_db and (has_latency or has_http_500)):
             probable_cause = "Database connection pool exhaustion"
@@ -63,10 +114,10 @@ class MockAIProvider(AIProvider):
                 "to spike and cascading into HTTP 500 timeouts."
             )
             evidence = [
-                "Database connections increased to 96%",
-                "API latency increased from 200ms to 2.8s",
+                f"DB connections reached {db_val:.0f}%",
+                f"API latency increased to {lat_val:.1f} seconds",
                 "HTTP 500 errors increased",
-                "CPU increased after database saturation",
+                "Payment requests timed out",
             ]
             recommended_actions = [
                 "Increase database connection pool and investigate long-running queries.",
@@ -75,7 +126,7 @@ class MockAIProvider(AIProvider):
                 "Restart stale database connection worker pool",
                 "Enable query caching on payment transaction ledger",
             ]
-            impact = "Critical degradation in transaction processing; ~15% payment request failure rate."
+            impact = "Critical degradation in transaction processing; ~18% payment request failure rate."
 
         # 2. High CPU Saturation
         elif has_cpu and not has_db:
