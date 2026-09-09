@@ -35,22 +35,22 @@ export const ActiveAlertsTable: React.FC<ActiveAlertsTableProps> = ({ alerts }) 
     const s = severity.toUpperCase();
     if (s === 'CRITICAL') {
       return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-red-500/10 text-red-400 border border-red-500/30">
-          <span className="h-1.5 w-1.5 rounded-full bg-red-400 mr-1.5 animate-pulse" />
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-red-100 text-red-700 border border-red-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-red-600 mr-1.5 animate-pulse" />
           CRITICAL
         </span>
       );
     }
     if (s === 'WARNING' || s === 'HIGH') {
       return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-400 mr-1.5" />
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-600 mr-1.5" />
           WARNING
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-slate-100 text-slate-700 border border-slate-300">
         INFO
       </span>
     );
@@ -60,22 +60,22 @@ export const ActiveAlertsTable: React.FC<ActiveAlertsTableProps> = ({ alerts }) 
     const st = status.toUpperCase();
     if (st === 'ACTIVE') {
       return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-red-950/40 text-red-400 border border-red-500/40">
-          <span className="h-1.5 w-1.5 rounded-full bg-red-500 mr-1.5 animate-ping" />
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-red-100 text-red-700 border border-red-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-red-600 mr-1.5 animate-ping" />
           ACTIVE
         </span>
       );
     }
     if (st === 'RESOLVED') {
       return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-950/40 text-emerald-400 border border-emerald-500/40">
-          <CheckCircle2 className="h-3 w-3 mr-1 text-emerald-400" />
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-300">
+          <CheckCircle2 className="h-3 w-3 mr-1 text-emerald-600" />
           RESOLVED
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-slate-100 text-slate-700 border border-slate-200">
         {status}
       </span>
     );
@@ -93,23 +93,23 @@ export const ActiveAlertsTable: React.FC<ActiveAlertsTableProps> = ({ alerts }) 
   };
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-[#0e1628] shadow-lg backdrop-blur-sm overflow-hidden">
+    <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       {/* Header with Search and Filter Controls */}
-      <div className="p-4 sm:p-5 border-b border-slate-800/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white">
         <div className="flex items-center space-x-3">
-          <div className="p-2 rounded-lg bg-red-950/30 border border-red-500/30 text-red-400">
+          <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-600">
             <ShieldAlert className="h-5 w-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-white tracking-wide">Active Alerts Table</h2>
+              <h2 className="text-base font-bold text-slate-900 tracking-wide">Active Alerts Table</h2>
               {activeCount > 0 && (
-                <span className="px-2 py-0.5 text-xs font-mono font-bold rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
+                <span className="px-2 py-0.5 text-xs font-mono font-bold rounded-full bg-red-100 text-red-700 border border-red-300">
                   {activeCount} Active
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-400">Real-time threshold breaches & operational alarms</p>
+            <p className="text-xs text-slate-500">Real-time threshold breaches & operational alarms</p>
           </div>
         </div>
 
@@ -122,38 +122,38 @@ export const ActiveAlertsTable: React.FC<ActiveAlertsTableProps> = ({ alerts }) 
               placeholder="Filter service/metric..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-8 pr-3 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+              className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:border-red-500"
             />
           </div>
 
           {/* Filter Pills */}
-          <div className="flex items-center bg-slate-900 p-1 rounded-lg border border-slate-800 text-xs">
+          <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
             <button
               onClick={() => setFilter('ACTIVE')}
-              className={`px-2.5 py-1 rounded-md font-medium transition ${
+              className={`px-2.5 py-1 rounded-md font-semibold transition ${
                 filter === 'ACTIVE'
-                  ? 'bg-red-500/20 text-red-300 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Active ({activeCount})
             </button>
             <button
               onClick={() => setFilter('ALL')}
-              className={`px-2.5 py-1 rounded-md font-medium transition ${
+              className={`px-2.5 py-1 rounded-md font-semibold transition ${
                 filter === 'ALL'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-slate-800 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               All ({alerts.length})
             </button>
             <button
               onClick={() => setFilter('RESOLVED')}
-              className={`px-2.5 py-1 rounded-md font-medium transition ${
+              className={`px-2.5 py-1 rounded-md font-semibold transition ${
                 filter === 'RESOLVED'
-                  ? 'bg-emerald-500/20 text-emerald-300 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Resolved
@@ -165,7 +165,7 @@ export const ActiveAlertsTable: React.FC<ActiveAlertsTableProps> = ({ alerts }) 
       {/* Table Content */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
-          <thead className="bg-[#0b1120] text-slate-400 uppercase tracking-wider font-mono border-b border-slate-800">
+          <thead className="bg-slate-50 text-slate-600 uppercase tracking-wider font-mono border-b border-slate-200">
             <tr>
               <th scope="col" className="px-4 py-3">Time</th>
               <th scope="col" className="px-4 py-3">Service</th>
@@ -175,13 +175,13 @@ export const ActiveAlertsTable: React.FC<ActiveAlertsTableProps> = ({ alerts }) 
               <th scope="col" className="px-4 py-3">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/60 font-mono">
+          <tbody className="divide-y divide-slate-100 font-mono">
             {filteredAlerts.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                   <div className="flex flex-col items-center justify-center space-y-2">
-                    <BellOff className="h-6 w-6 text-slate-600" />
-                    <p className="text-xs text-slate-400">
+                    <BellOff className="h-6 w-6 text-slate-400" />
+                    <p className="text-xs text-slate-500">
                       {filter === 'ACTIVE'
                         ? 'No active alerts detected. All monitored systems operating within nominal thresholds.'
                         : 'No alerts match the selected criteria.'}
@@ -193,34 +193,34 @@ export const ActiveAlertsTable: React.FC<ActiveAlertsTableProps> = ({ alerts }) 
               filteredAlerts.map((alert) => (
                 <tr
                   key={alert.id}
-                  className={`transition hover:bg-slate-800/30 ${
+                  className={`transition hover:bg-red-50/40 ${
                     alert.status.toUpperCase() === 'ACTIVE'
                       ? alert.severity.toUpperCase() === 'CRITICAL'
-                        ? 'bg-red-950/10'
-                        : 'bg-amber-950/5'
+                        ? 'bg-red-50/60'
+                        : 'bg-amber-50/50'
                       : ''
                   }`}
                 >
                   {/* Column 1: Time */}
-                  <td className="px-4 py-3 whitespace-nowrap text-slate-400 font-mono text-[11px]">
+                  <td className="px-4 py-3 whitespace-nowrap text-slate-500 font-mono text-[11px]">
                     {formatTime(alert.timestamp)}
                   </td>
 
                   {/* Column 2: Service */}
-                  <td className="px-4 py-3 whitespace-nowrap font-semibold text-slate-200">
-                    <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-cyan-300">
+                  <td className="px-4 py-3 whitespace-nowrap font-semibold text-slate-800">
+                    <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-red-700 font-bold">
                       {alert.service}
                     </span>
                   </td>
 
                   {/* Column 3: Metric */}
-                  <td className="px-4 py-3 whitespace-nowrap text-slate-300 uppercase">
+                  <td className="px-4 py-3 whitespace-nowrap text-slate-700 uppercase font-medium">
                     {alert.metric}
                   </td>
 
                   {/* Column 4: Value */}
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className="font-bold text-white font-mono">
+                    <span className="font-bold text-slate-900 font-mono">
                       {typeof alert.value === 'number' ? alert.value.toFixed(1) : alert.value}%
                     </span>
                     <span className="text-[10px] text-slate-500 ml-1">

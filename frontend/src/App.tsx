@@ -377,7 +377,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col font-sans">
       {/* SECTION 1: Top Navigation (Logo, System Status, WebSocket Status) */}
       <Navbar
         health={health}
@@ -391,17 +391,17 @@ export const App: React.FC = () => {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Real-time Event Toast / Notification Banner */}
         {toastNotice && (
-          <div className="rounded-lg border border-cyan-500/30 bg-cyan-950/30 px-4 py-2 text-xs text-cyan-200 flex items-center justify-between shadow-sm animate-fadeIn">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-800 flex items-center justify-between shadow-sm animate-fadeIn">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
               </span>
-              <span className="font-mono">{toastNotice}</span>
+              <span className="font-mono font-medium">{toastNotice}</span>
             </div>
             <button
               onClick={() => setToastNotice(null)}
-              className="text-cyan-400 hover:text-cyan-200 text-xs font-mono ml-4"
+              className="text-red-600 hover:text-red-800 text-xs font-mono ml-4 font-semibold"
             >
               dismiss
             </button>
@@ -475,7 +475,7 @@ export const App: React.FC = () => {
         />
       </main>
 
-      <footer className="border-t border-slate-800/80 bg-[#070b14] py-4 text-center text-xs text-slate-500 font-mono">
+      <footer className="border-t border-red-100 bg-white py-4 text-center text-xs text-slate-500 font-mono shadow-sm">
         AegisOps Autonomous AI Operations Center &copy; 2026. Real-time Streaming via WebSocket (ws://localhost:8000/ws/monitor).
       </footer>
     </div>
