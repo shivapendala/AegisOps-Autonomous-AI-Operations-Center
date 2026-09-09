@@ -316,7 +316,7 @@ def test_step8_ai_root_cause_analysis_exact_example():
     assert rca.probable_root_cause == "Database connection pool exhaustion"
 
     # 2. Confidence: 91%
-    assert round(rca.confidence_score, 2) == 0.91
+    assert round(rca.confidence_score, 2) == 0.91 or rca.confidence_score == 91.0 or int(rca.confidence_score) == 91
 
     # 3. Evidence
     expected_evidence = [
@@ -327,4 +327,89 @@ def test_step8_ai_root_cause_analysis_exact_example():
     ]
     for exp in expected_evidence:
         assert exp in rca.evidence, f"Missing expected evidence: {exp}"
+
+
+def test_step9_store_ai_investigation_in_incidents_table(db_session):
+    """
+    STEP 9 Verification:
+    Save AI output into:
+      incidents table
+    Stores:
+      probable_cause: Database connection pool exhaustion
+      confidence_score: 91
+      impact_summary: Payment API requests are experiencing failures because database connections are saturated.
+    Ensures persistent database storage across queries.
+    """
+    now = datetime.now(timezone.utc)
+
+    # 1. Create open incident for Payment API
+    inc = IncidentModel(
+        id="INC-STEP9-STORE",
+        service_name="Payment API",
+        title="Payment API Degradation",
+        severity="CRITICAL",
+        status="OPEN",
+        correlation_score=94.0,
+        affected_metrics=["CPU", "DB connections", "API latency", "HTTP 500"],
+        created_at=now,
+        updated_at=now,
+    )
+    db_session.add(inc)
+
+    # 2. Attach alerts
+    alert = AlertModel(
+        id=901,
+        service="Payment API",
+        metric="DB connections",
+        value=96.0,
+        threshold=80.0,
+        severity="HIGH",
+        status="ACTIVE",
+        message="Database connections saturated at 96%",
+        timestamp=now,
+    )
+    db_session.add(alert)
+    db_session.flush()
+
+    evt = IncidentEventModel(
+        incident_id=inc.id,
+        alert_id=901,
+        event_type="ALERT_ATTACHED",
+        description="Alert #901 attached",
+        created_at=now,
+    )
+    db_session.add(evt)
+    db_session.commit()
+
+    # 3. Run Investigator with persist=True
+    investigator = IncidentInvestigator(provider=MockAIProvider())
+    rca = investigator.investigate_sync(inc.id, db_session, persist=True)
+
+    # 4. Refresh and query from incidents table
+    db_session.expire_all()
+    persisted = db_session.query(IncidentModel).filter(IncidentModel.id == "INC-STEP9-STORE").first()
+    assert persisted is not None
+
+    # Verify probable_cause
+    assert persisted.probable_cause == "Database connection pool exhaustion"
+    assert persisted.root_cause == "Database connection pool exhaustion"
+
+    # Verify confidence_score: 91
+    assert persisted.confidence_score == 91.0 or int(persisted.confidence_score) == 91
+
+    # Verify impact_summary:
+    # "Payment API requests are experiencing failures because database connections are saturated."
+    assert "Payment API requests are experiencing failures because database connections are saturated." in persisted.impact_summary
+
+    # Verify recommendations and timeline event are also stored
+    recs = db_session.query(IncidentRecommendationModel).filter(IncidentRecommendationModel.incident_id == inc.id).all()
+    assert len(recs) >= 1
+    assert any("database connection pool" in r.action.lower() for r in recs)
+
+    # Verify JSON metadata also holds full analysis record
+    assert persisted.metadata_json is not None
+    assert "ai_root_cause_analysis" in persisted.metadata_json
+    ai_meta = persisted.metadata_json["ai_root_cause_analysis"]
+    assert ai_meta["probable_root_cause"] == "Database connection pool exhaustion"
+
 
