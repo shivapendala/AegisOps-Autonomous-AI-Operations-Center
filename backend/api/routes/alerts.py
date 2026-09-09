@@ -3,6 +3,7 @@ Alerts Management API Endpoints.
 Provides listing, filtering, threshold breach evaluation, and lifecycle tracking for operational alerts.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status
@@ -12,7 +13,9 @@ from backend.core.exceptions import ResourceNotFoundError
 from backend.schemas.alert import AlertCreate, AlertResponse, AlertUpdate
 from database.models.alert import AlertModel
 from database.session import get_sync_db
+from backend.incidents.service import IncidentService
 
+logger = logging.getLogger("aegisops.backend.api.alerts")
 router = APIRouter(prefix="/alerts", tags=["Alerts"])
 
 
@@ -62,7 +65,12 @@ def get_alert(alert_id: int, db: Session = Depends(get_sync_db)):
 
 @router.post("", response_model=AlertResponse, status_code=status.HTTP_201_CREATED, summary="Create Alert")
 def create_alert(payload: AlertCreate, db: Session = Depends(get_sync_db)):
-    """Manually registers or raises an operational alert."""
+    """
+    Manually registers or raises an operational alert.
+    Automatically evaluates event correlation against active incidents:
+        - If related incident found (score >= 60): adds alert to existing incident
+        - If no related incident found: creates a new incident ticket
+    """
     new_alert = AlertModel(
         service_id=payload.service_id,
         service=payload.service,
@@ -78,6 +86,14 @@ def create_alert(payload: AlertCreate, db: Session = Depends(get_sync_db)):
     db.add(new_alert)
     db.commit()
     db.refresh(new_alert)
+
+    # Step 5: Automatically correlate alert into incident
+    try:
+        service = IncidentService(window_seconds=60, threshold_score=60.0)
+        service.correlate_alert(db, new_alert)
+    except Exception as exc:
+        logger.warning("Automatic alert correlation failed: %s", exc)
+
     return new_alert
 
 

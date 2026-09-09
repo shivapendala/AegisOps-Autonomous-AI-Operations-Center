@@ -74,7 +74,7 @@ class IncidentService:
             "metric": getattr(alert, "metric", ""),
             "value": getattr(alert, "value", 0.0),
             "severity": getattr(alert, "severity", "WARNING"),
-            "timestamp": getattr(alert, "created_at", datetime.now(timezone.utc)),
+            "timestamp": getattr(alert, "timestamp", None) or getattr(alert, "created_at", None) or datetime.now(timezone.utc),
         }
         sanitized_alert = _sanitize_alert(alert_dict)
 

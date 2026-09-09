@@ -194,7 +194,7 @@ class MonitoringService:
             ]
             db.add_all(metrics_records)
 
-            # Persist newly triggered alerts
+            persisted_alerts = []
             for alert_dict in new_alerts:
                 alert_model = AlertModel(
                     service=alert_dict["service"],
@@ -208,6 +208,8 @@ class MonitoringService:
                     timestamp=alert_dict["timestamp"],
                 )
                 db.add(alert_model)
+                persisted_alerts.append(alert_model)
+            db.flush()
 
             # Update resolved alerts in database
             for resolved_dict in resolved_alerts:
@@ -236,6 +238,18 @@ class MonitoringService:
                         db_inc.affected_metrics = c_inc.affected_metrics
                         db_inc.affected_events = c_inc.affected_events
                         db_inc.updated_at = c_inc.updated_at
+                        for a_mod in persisted_alerts:
+                            if a_mod.service == c_inc.service and a_mod.metric in c_inc.affected_metrics:
+                                evt = IncidentEventModel(
+                                    incident_id=c_inc.id,
+                                    alert_id=a_mod.id,
+                                    event_type="ALERT_ATTACHED",
+                                    description=f"Alert #{a_mod.id} ({a_mod.metric}) added to incident {c_inc.id}",
+                                    actor="EventCorrelationEngine",
+                                    event_data={"metric": a_mod.metric, "value": a_mod.value},
+                                    created_at=c_inc.updated_at,
+                                )
+                                db.add(evt)
                     else:
                         new_db_inc = IncidentModel(
                             id=c_inc.id,
@@ -263,6 +277,18 @@ class MonitoringService:
                             created_at=c_inc.created_at,
                         )
                         db.add(initial_evt)
+                        for a_mod in persisted_alerts:
+                            if a_mod.service == c_inc.service and a_mod.metric in c_inc.affected_metrics:
+                                evt = IncidentEventModel(
+                                    incident_id=c_inc.id,
+                                    alert_id=a_mod.id,
+                                    event_type="ALERT_ATTACHED",
+                                    description=f"Alert #{a_mod.id} ({a_mod.metric}) attached to incident {c_inc.id}",
+                                    actor="EventCorrelationEngine",
+                                    event_data={"metric": a_mod.metric, "value": a_mod.value},
+                                    created_at=c_inc.created_at,
+                                )
+                                db.add(evt)
                         db.commit()
 
                         # Run automated AI Root Cause Analysis against the incident
