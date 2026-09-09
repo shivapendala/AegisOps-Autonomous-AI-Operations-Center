@@ -56,15 +56,24 @@ export interface TimelineEvent {
 export interface Incident {
   id: string;
   service_id?: number;
+  service?: string;
   service_name?: string;
   title: string;
   description?: string;
   severity: 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  status: 'OPEN' | 'INVESTIGATING' | 'MITIGATING' | 'RESOLVED' | 'CLOSED';
+  status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'CLOSED';
   root_cause?: string;
+  probable_cause?: string;
   impact_summary?: string;
   ai_remediation?: string;
   anomaly_score?: number;
+  correlation_score?: number;
+  affected_metrics?: string[];
+  affected_events?: any[];
+  confidence?: number;
+  evidence?: string[];
+  recommended_actions?: string[];
+  metadata_json?: any;
   created_at: string;
   updated_at: string;
   resolved_at?: string;

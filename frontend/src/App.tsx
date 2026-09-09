@@ -7,12 +7,14 @@ import { ActiveIncidentsPanel } from './components/ActiveIncidentsPanel';
 import { RecentEventsTimeline } from './components/RecentEventsTimeline';
 import { SystemHealthIndicator } from './components/SystemHealthIndicator';
 import { ServicesCatalog } from './components/ServicesCatalog';
+import { IncidentDetailsModal } from './components/IncidentDetailsModal';
 import {
   fetchHealth,
   fetchCurrentMetrics,
   fetchAlerts,
   fetchServices,
   fetchIncidents,
+  fetchIncidentDetails,
   resolveIncident,
   triggerManualIncident,
 } from './services/api';
@@ -35,6 +37,7 @@ export const App: React.FC = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [reconnectDelay, setReconnectDelay] = useState<number | undefined>(undefined);
@@ -175,6 +178,7 @@ export const App: React.FC = () => {
             }
             return [inc, ...prev];
           });
+          setSelectedIncident((curr) => (curr && curr.id === inc.id ? { ...curr, ...inc } : curr));
           setToastNotice(`⚠️ Incident Update: ${inc.id} [${inc.status}]`);
           addTimelineEvent({
             id: `inc-${Date.now()}`,
@@ -298,6 +302,29 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleSelectIncident = async (inc: Incident) => {
+    try {
+      const detailed = await fetchIncidentDetails(inc.id);
+      setSelectedIncident(detailed);
+    } catch {
+      setSelectedIncident(inc);
+    }
+  };
+
+  const handleIncidentUpdated = (updated: Incident) => {
+    setIncidents((prev) => {
+      const idx = prev.findIndex((i) => i.id === updated.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...updated };
+        return next;
+      }
+      return [updated, ...prev];
+    });
+    setSelectedIncident(updated);
+    setToastNotice(`Incident ${updated.id} status updated to ${updated.status}`);
+  };
+
   const handleSimulateDrill = async () => {
     try {
       await triggerManualIncident(
@@ -373,6 +400,7 @@ export const App: React.FC = () => {
           incidents={incidents}
           onResolve={handleResolveIncident}
           onSimulateDrill={handleSimulateDrill}
+          onSelectIncident={handleSelectIncident}
           loading={loading}
         />
 
@@ -384,6 +412,14 @@ export const App: React.FC = () => {
         {/* SECTION 9: Recent Events Timeline (Chronological Audit Stream) */}
         <RecentEventsTimeline
           events={timelineEvents}
+        />
+
+        {/* Incident Details Console / Modal */}
+        <IncidentDetailsModal
+          incident={selectedIncident}
+          isOpen={selectedIncident !== null}
+          onClose={() => setSelectedIncident(null)}
+          onIncidentUpdated={handleIncidentUpdated}
         />
       </main>
 

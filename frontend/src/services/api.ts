@@ -41,13 +41,48 @@ export async function fetchIncidents(status?: string): Promise<Incident[]> {
   return res.json();
 }
 
-export async function resolveIncident(incidentId: string, notes: string): Promise<Incident> {
+export async function fetchIncidentDetails(incidentId: string): Promise<Incident> {
+  const res = await fetch(`${API_BASE}/incidents/${incidentId}`);
+  if (!res.ok) throw new Error(`Fetch incident details failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function investigateIncident(incidentId: string, notes?: string): Promise<Incident> {
+  const res = await fetch(`${API_BASE}/incidents/${incidentId}/investigate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      investigation_notes: notes || 'Investigation initiated by Operations Engineer',
+      actor: 'Operations Console',
+    }),
+  });
+  if (!res.ok) throw new Error(`Investigate incident failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function resolveIncident(incidentId: string, notes?: string): Promise<Incident> {
   const res = await fetch(`${API_BASE}/incidents/${incidentId}/resolve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ resolution_notes: notes, actor: 'Operations Console' }),
+    body: JSON.stringify({
+      resolution_notes: notes || 'Resolved via Operations Console',
+      actor: 'Operations Console',
+    }),
   });
   if (!res.ok) throw new Error(`Resolve incident failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function closeIncident(incidentId: string, notes?: string): Promise<Incident> {
+  const res = await fetch(`${API_BASE}/incidents/${incidentId}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      closure_notes: notes || 'Incident closed by Operations Engineer',
+      actor: 'Operations Console',
+    }),
+  });
+  if (!res.ok) throw new Error(`Close incident failed: ${res.statusText}`);
   return res.json();
 }
 
