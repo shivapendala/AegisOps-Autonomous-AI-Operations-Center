@@ -1,0 +1,41 @@
+# Git and VCS
+.git
+.gitignore
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+dist
+build
+.pytest_cache
+.coverage
+htmlcov
+
+# Node and Frontend artifacts
+node_modules
+frontend/node_modules
+frontend/dist
+.npm
+
+# Databases and Local storage
+*.db
+*.sqlite
+*.sqlite3
+aegisops_local.db
+postgres_data
+
+# Environment files and secrets
+.env
+.env.local
+.env.*.local
+*.log
+
+# IDE & OS files
+.vscode
+.idea
+.DS_Store
+Thumbs.db
