@@ -48,11 +48,32 @@ class ConnectionManager:
         if not self._active_connections:
             return
 
-        message = {
+        message: Dict[str, Any] = {
             "type": event_type,
             "data": payload,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+
+        # Expose top-level fields for direct convenience (e.g. {"type": "incident_created", "incident_id": 101})
+        if isinstance(payload, dict):
+            if "incident_id" in payload:
+                clean_id = str(payload["incident_id"]).replace("INC-", "")
+                message["incident_id"] = int(clean_id) if clean_id.isdigit() else payload["incident_id"]
+            elif "id" in payload and any(sub in event_type.lower() for sub in ["incident", "inc"]):
+                clean_id = str(payload["id"]).replace("INC-", "")
+                message["incident_id"] = int(clean_id) if clean_id.isdigit() else payload["id"]
+
+            if "alert_id" in payload:
+                clean_id = str(payload["alert_id"]).replace("ALT-", "")
+                message["alert_id"] = int(clean_id) if clean_id.isdigit() else payload["alert_id"]
+            elif "id" in payload and any(sub in event_type.lower() for sub in ["alert", "alt"]):
+                clean_id = str(payload["id"]).replace("ALT-", "")
+                message["alert_id"] = int(clean_id) if clean_id.isdigit() else payload["id"]
+
+            if "severity" in payload:
+                message["severity"] = payload["severity"]
+            if "title" in payload:
+                message["title"] = payload["title"]
 
         # Serialized JSON string
         raw_message = json.dumps(message, default=str)
@@ -78,9 +99,25 @@ class ConnectionManager:
         data = telemetry.model_dump(mode="json") if hasattr(telemetry, "model_dump") else telemetry
         await self.broadcast_event("METRICS_UPDATE", data)
 
+    async def broadcast_new_alert(self, alert_data: Dict[str, Any]) -> None:
+        """Broadcasts a new threshold breach alert (type: new_alert)."""
+        await self.broadcast_event("new_alert", alert_data)
+
     async def broadcast_alert(self, alert_data: Dict[str, Any], event_type: str = "NEW_ALERT") -> None:
-        """Broadcasts threshold alert event (NEW_ALERT or ALERT_RESOLVED)."""
+        """Broadcasts threshold alert event (NEW_ALERT, new_alert, or ALERT_RESOLVED)."""
         await self.broadcast_event(event_type, alert_data)
+
+    async def broadcast_incident_created(self, incident_data: Dict[str, Any]) -> None:
+        """Broadcasts new incident creation (type: incident_created)."""
+        await self.broadcast_event("incident_created", incident_data)
+
+    async def broadcast_incident_updated(self, incident_data: Dict[str, Any]) -> None:
+        """Broadcasts incident modification/update (type: incident_updated)."""
+        await self.broadcast_event("incident_updated", incident_data)
+
+    async def broadcast_incident_resolved(self, incident_data: Dict[str, Any]) -> None:
+        """Broadcasts incident resolution (type: incident_resolved)."""
+        await self.broadcast_event("incident_resolved", incident_data)
 
     async def broadcast_incident(self, incident_data: Dict[str, Any], event_type: str = "INCIDENT_UPDATE") -> None:
         """Broadcasts incident lifecycle change."""

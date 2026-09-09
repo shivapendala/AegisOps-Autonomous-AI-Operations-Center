@@ -87,6 +87,31 @@ def create_alert(payload: AlertCreate, db: Session = Depends(get_sync_db)):
     db.commit()
     db.refresh(new_alert)
 
+    # Step 14: Broadcast new_alert via WebSocket
+    try:
+        from backend.core.websocket_manager import ws_manager
+        import asyncio
+        alert_dict = {
+            "id": new_alert.id,
+            "service": new_alert.service,
+            "metric": new_alert.metric,
+            "value": new_alert.value,
+            "threshold": new_alert.threshold,
+            "severity": new_alert.severity,
+            "message": new_alert.message,
+            "status": new_alert.status,
+            "timestamp": new_alert.created_at.isoformat() if new_alert.created_at else None,
+        }
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(ws_manager.broadcast_new_alert(alert_dict))
+            loop.create_task(ws_manager.broadcast_alert(alert_dict, "NEW_ALERT"))
+        except RuntimeError:
+            asyncio.run(ws_manager.broadcast_new_alert(alert_dict))
+            asyncio.run(ws_manager.broadcast_alert(alert_dict, "NEW_ALERT"))
+    except Exception as exc:
+        logger.debug("Failed to broadcast new_alert: %s", exc)
+
     # Step 5: Automatically correlate alert into incident
     try:
         service = IncidentService(window_seconds=60, threshold_score=60.0)
@@ -107,4 +132,27 @@ def resolve_alert(alert_id: int, db: Session = Depends(get_sync_db)):
     alert.resolved_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(alert)
+
+    try:
+        from backend.core.websocket_manager import ws_manager
+        import asyncio
+        resolved_dict = {
+            "id": alert.id,
+            "service": alert.service,
+            "metric": alert.metric,
+            "value": alert.value,
+            "threshold": alert.threshold,
+            "severity": alert.severity,
+            "message": alert.message,
+            "status": "RESOLVED",
+            "resolved_at": alert.resolved_at.isoformat() if alert.resolved_at else None,
+        }
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(ws_manager.broadcast_alert(resolved_dict, "ALERT_RESOLVED"))
+        except RuntimeError:
+            asyncio.run(ws_manager.broadcast_alert(resolved_dict, "ALERT_RESOLVED"))
+    except Exception as exc:
+        logger.debug("Failed to broadcast alert resolution: %s", exc)
+
     return alert

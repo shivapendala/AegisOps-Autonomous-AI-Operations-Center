@@ -17,6 +17,7 @@ import {
   fetchAlerts,
   fetchServices,
   fetchIncidents,
+  fetchIncidentDetails,
   resolveIncident,
   triggerManualIncident,
   fetchSimulationStatus,
@@ -151,10 +152,22 @@ export const App: React.FC = () => {
           break;
         }
 
+        case 'new_alert':
         case 'NEW_ALERT': {
-          const newAlert: Alert = event.data;
+          const alertPayload = event.data || event;
+          const newAlert: Alert = {
+            id: alertPayload.id || alertPayload.alert_id || Date.now(),
+            service: alertPayload.service || 'Payment API',
+            metric: alertPayload.metric || 'cpu_usage',
+            value: alertPayload.value || 0,
+            threshold: alertPayload.threshold || 0,
+            severity: alertPayload.severity || 'WARNING',
+            message: alertPayload.message || 'Telemetry breach observed',
+            status: alertPayload.status || 'ACTIVE',
+            timestamp: alertPayload.timestamp || new Date().toISOString(),
+          };
           setAlerts((prev) => {
-            const filtered = prev.filter((a) => a.id !== newAlert.id);
+            const filtered = prev.filter((a) => String(a.id) !== String(newAlert.id));
             return [newAlert, ...filtered];
           });
           setToastNotice(`🚨 Alert Triggered: ${newAlert.service} ${newAlert.metric} [${newAlert.severity}]`);
@@ -170,11 +183,13 @@ export const App: React.FC = () => {
           break;
         }
 
+        case 'alert_resolved':
         case 'ALERT_RESOLVED': {
-          const resolved: Alert = event.data;
+          const resolved = event.data || event;
           setAlerts((prev) =>
             prev.map((a) =>
-              a.metric === resolved.metric && a.service === resolved.service
+              (resolved.id && String(a.id) === String(resolved.id)) ||
+              (a.metric === resolved.metric && a.service === resolved.service)
                 ? { ...a, status: 'RESOLVED' }
                 : a
             )
@@ -192,27 +207,179 @@ export const App: React.FC = () => {
           break;
         }
 
-        case 'INCIDENT_UPDATE': {
-          const inc: Incident = event.data;
-          setIncidents((prev) => {
-            const index = prev.findIndex((i) => i.id === inc.id);
-            if (index >= 0) {
-              const updated = [...prev];
-              updated[index] = { ...updated[index], ...inc };
-              return updated;
-            }
-            return [inc, ...prev];
-          });
-          setSelectedIncident((curr) => (curr && curr.id === inc.id ? { ...curr, ...inc } : curr));
-          setToastNotice(`⚠️ Incident Update: ${inc.id} [${inc.status}]`);
+        case 'incident_created': {
+          const incData = event.data || event;
+          const rawId = event.incident_id || incData.incident_id || incData.id;
+          const incId = String(rawId || '');
+          const severity = incData.severity || event.severity || 'CRITICAL';
+          const title = incData.title || event.title || `Incident #${incId}`;
+
+          // Prominently update notification banner without refreshing browser
+          if (String(severity).toUpperCase() === 'CRITICAL') {
+            setToastNotice('🚨 New Critical Incident');
+          } else {
+            setToastNotice(`🚨 New Incident: ${title}`);
+          }
+
+          if (incData.title && incData.status) {
+            const newInc: Incident = {
+              id: incId || String(incData.id),
+              service_name: incData.service_name || incData.service || 'Payment API',
+              service: incData.service || incData.service_name || 'Payment API',
+              title: incData.title,
+              description: incData.description || '',
+              severity: (incData.severity || 'CRITICAL') as any,
+              status: incData.status || 'OPEN',
+              probable_cause: incData.probable_cause || incData.root_cause,
+              root_cause: incData.root_cause || incData.probable_cause,
+              correlation_score: incData.correlation_score || 91.0,
+              confidence_score: incData.confidence_score || 91.0,
+              created_at: incData.created_at || new Date().toISOString(),
+              updated_at: incData.updated_at || new Date().toISOString(),
+            };
+            setIncidents((prev) => {
+              const filtered = prev.filter(
+                (i) =>
+                  String(i.id) !== String(newInc.id) &&
+                  String(i.id).replace(/^INC-/, '') !== String(newInc.id).replace(/^INC-/, '')
+              );
+              return [newInc, ...filtered];
+            });
+          } else if (incId) {
+            fetchIncidentDetails(incId)
+              .then((fullInc) => {
+                setIncidents((prev) => {
+                  const filtered = prev.filter(
+                    (i) =>
+                      String(i.id) !== String(fullInc.id) &&
+                      String(i.id).replace(/^INC-/, '') !== String(fullInc.id).replace(/^INC-/, '')
+                  );
+                  return [fullInc, ...filtered];
+                });
+              })
+              .catch((err) => console.error('Failed to load incident details for incident_created:', err));
+          }
+
           addTimelineEvent({
-            id: `inc-${Date.now()}`,
+            id: `inc-create-${Date.now()}`,
             event_type: 'INCIDENT',
-            title: `Incident ${inc.id}: ${inc.title}`,
-            description: inc.root_cause ? `AI Diagnosis: ${inc.root_cause}` : (inc.description || inc.status),
-            severity: inc.severity,
+            title: `🚨 Incident #${incId} Created: ${title}`,
+            description:
+              incData.probable_cause ||
+              incData.description ||
+              'Autonomous correlation engine synthesized new incident ticket.',
+            severity: (String(severity).toUpperCase() as any) || 'CRITICAL',
+            actor: 'AegisOps-CorrelationEngine',
+            timestamp: new Date().toISOString(),
+          });
+          break;
+        }
+
+        case 'incident_resolved': {
+          const incData = event.data || event;
+          const rawId = event.incident_id || incData.incident_id || incData.id;
+          const incId = String(rawId || '');
+
+          setIncidents((prev) =>
+            prev.map((i) => {
+              const matches =
+                String(i.id) === incId ||
+                String(i.id).replace(/^INC-/, '') === incId.replace(/^INC-/, '');
+              return matches
+                ? { ...i, status: 'RESOLVED', resolved_at: new Date().toISOString() }
+                : i;
+            })
+          );
+
+          setSelectedIncident((curr) =>
+            curr &&
+            (String(curr.id) === incId ||
+              String(curr.id).replace(/^INC-/, '') === incId.replace(/^INC-/, ''))
+              ? { ...curr, status: 'RESOLVED', resolved_at: new Date().toISOString() }
+              : curr
+          );
+
+          setToastNotice(`✅ Incident Resolved: Incident #${incId}`);
+          addTimelineEvent({
+            id: `inc-res-${Date.now()}`,
+            event_type: 'INCIDENT',
+            title: `Incident #${incId} Resolved`,
+            description: 'Incident ticket closed and service telemetry returned to nominal thresholds.',
+            severity: 'INFO',
+            actor: 'Operations Console',
+            timestamp: new Date().toISOString(),
+          });
+          break;
+        }
+
+        case 'incident_updated':
+        case 'INCIDENT_UPDATE': {
+          const incData = event.data || event;
+          const rawId = event.incident_id || incData.incident_id || incData.id;
+          const incId = String(rawId || '');
+
+          if (incData.title && incData.status) {
+            const inc: Incident = incData;
+            setIncidents((prev) => {
+              const index = prev.findIndex(
+                (i) =>
+                  String(i.id) === String(inc.id) ||
+                  String(i.id).replace(/^INC-/, '') === String(inc.id).replace(/^INC-/, '')
+              );
+              if (index >= 0) {
+                const updated = [...prev];
+                updated[index] = { ...updated[index], ...inc };
+                return updated;
+              }
+              return [inc, ...prev];
+            });
+            setSelectedIncident((curr) =>
+              curr &&
+              (String(curr.id) === String(inc.id) ||
+                String(curr.id).replace(/^INC-/, '') === String(inc.id).replace(/^INC-/, ''))
+                ? { ...curr, ...inc }
+                : curr
+            );
+          } else if (incId) {
+            fetchIncidentDetails(incId)
+              .then((fullInc) => {
+                setIncidents((prev) => {
+                  const index = prev.findIndex(
+                    (i) =>
+                      String(i.id) === String(fullInc.id) ||
+                      String(i.id).replace(/^INC-/, '') === String(fullInc.id).replace(/^INC-/, '')
+                  );
+                  if (index >= 0) {
+                    const updated = [...prev];
+                    updated[index] = { ...updated[index], ...fullInc };
+                    return updated;
+                  }
+                  return [fullInc, ...prev];
+                });
+                setSelectedIncident((curr) =>
+                  curr &&
+                  (String(curr.id) === String(fullInc.id) ||
+                    String(curr.id).replace(/^INC-/, '') === String(fullInc.id).replace(/^INC-/, ''))
+                    ? { ...curr, ...fullInc }
+                    : curr
+                );
+              })
+              .catch((err) => console.error('Failed to load updated incident:', err));
+          }
+
+          setToastNotice(`⚠️ Incident Update: Incident #${incId} [${incData.status || 'UPDATED'}]`);
+          addTimelineEvent({
+            id: `inc-upd-${Date.now()}`,
+            event_type: 'INCIDENT',
+            title: `Incident #${incId}: ${incData.title || 'Status Update'}`,
+            description:
+              incData.root_cause ||
+              incData.probable_cause ||
+              incData.description ||
+              `Status transitioned to ${incData.status}`,
+            severity: incData.severity || 'HIGH',
             actor: 'AI Autonomous Operations Engine',
-            timestamp: inc.updated_at || inc.created_at || new Date().toISOString(),
+            timestamp: incData.updated_at || incData.created_at || new Date().toISOString(),
           });
           break;
         }
