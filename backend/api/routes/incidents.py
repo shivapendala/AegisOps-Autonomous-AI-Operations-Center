@@ -377,7 +377,7 @@ async def investigate_incident(
 
     # Automatically refresh AI RCA
     try:
-        from aegisops.ai.rca import IncidentInvestigator
+        from backend.ai.investigator import IncidentInvestigator
         investigator = IncidentInvestigator()
         await investigator.investigate(incident_id=inc.id, db=db, persist=True)
     except Exception as e:
@@ -495,7 +495,7 @@ async def trigger_incident_rca(
     Aggregates incident info, correlated alerts, recent metrics, service info, and logs,
     invokes the AI provider (MockAIProvider or LLMProvider), and persists the findings.
     """
-    from aegisops.ai.rca import IncidentInvestigator
+    from backend.ai.investigator import IncidentInvestigator
     inc = _get_incident_or_404(incident_id, db)
 
     investigator = IncidentInvestigator()
