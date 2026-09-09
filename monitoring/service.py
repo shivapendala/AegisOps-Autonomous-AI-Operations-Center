@@ -14,10 +14,13 @@ from sqlalchemy.orm import Session
 
 from aegisops.models.events import SystemTelemetry
 from database.models.alert import AlertModel
+from database.models.incident import IncidentModel
+from database.models.incident_event import IncidentEventModel
 from database.models.metric import MetricModel
 from database.session import SessionLocal
 from monitoring.alert_engine import AlertRuleEngine
 from monitoring.collector import SystemCollector
+from monitoring.correlation_engine import CorrelatedIncident, EventCorrelationEngine
 from monitoring.thresholds import ThresholdConfig
 
 logger = logging.getLogger("aegisops.monitoring.service")
@@ -26,7 +29,8 @@ logger = logging.getLogger("aegisops.monitoring.service")
 class MonitoringService:
     """
     Autonomous monitoring service.
-    Orchestrates telemetry harvesting, PostgreSQL persistence, and threshold-based alert generation.
+    Orchestrates telemetry harvesting, PostgreSQL persistence, threshold-based alert generation,
+    and deterministic event correlation into unified incidents.
     """
 
     def __init__(
@@ -35,17 +39,23 @@ class MonitoringService:
         thresholds: Optional[ThresholdConfig] = None,
         db_factory: Optional[Callable[[], Session]] = None,
         service_name: str = "system-host",
+        correlation_window_seconds: int = 60,
     ):
         self.interval_seconds = interval_seconds
         self.service_name = service_name
         self.collector = SystemCollector()
         self.alert_engine = AlertRuleEngine(thresholds=thresholds, service_name=service_name)
+        self.correlation_engine = EventCorrelationEngine(
+            window_seconds=correlation_window_seconds,
+            threshold_score=60.0,
+        )
         self.db_factory = db_factory or SessionLocal
 
         self._running: bool = False
         self._task: Optional[asyncio.Task] = None
         self._recent_telemetry: List[SystemTelemetry] = []
         self._max_in_memory_history: int = 120
+        self.latest_incidents: List[CorrelatedIncident] = []
 
     def step(
         self, telemetry_override: Optional[SystemTelemetry] = None
@@ -66,11 +76,20 @@ class MonitoringService:
         # 2. Evaluate thresholds and get new / resolved alerts
         new_alerts, resolved_alerts = self.alert_engine.evaluate(telemetry)
 
-        # 3. Persist metrics and alerts to PostgreSQL
-        self._persist_to_database(telemetry, new_alerts, resolved_alerts)
+        # 3. Deterministically correlate incoming alerts into unified incidents
+        updated_incidents: List[CorrelatedIncident] = []
+        for alert_dict in new_alerts:
+            inc, is_new = self.correlation_engine.process_alert(alert_dict)
+            if inc and inc not in updated_incidents:
+                updated_incidents.append(inc)
 
-        # 4. Broadcast real-time events to connected dashboard clients
-        self._broadcast_updates(telemetry, new_alerts, resolved_alerts)
+        self.latest_incidents = updated_incidents
+
+        # 4. Persist metrics, alerts, and correlated incidents to PostgreSQL
+        self._persist_to_database(telemetry, new_alerts, resolved_alerts, updated_incidents)
+
+        # 5. Broadcast real-time events to connected dashboard clients
+        self._broadcast_updates(telemetry, new_alerts, resolved_alerts, updated_incidents)
 
         return telemetry, new_alerts, resolved_alerts
 
@@ -79,8 +98,9 @@ class MonitoringService:
         telemetry: SystemTelemetry,
         new_alerts: List[dict],
         resolved_alerts: List[dict],
+        correlated_incidents: Optional[List[CorrelatedIncident]] = None,
     ) -> None:
-        """Dispatches metrics and alert changes over WebSocket."""
+        """Dispatches metrics, alert changes, and correlated incidents over WebSocket."""
         try:
             from backend.core.websocket_manager import ws_manager
             if ws_manager.client_count == 0:
@@ -98,6 +118,9 @@ class MonitoringService:
                     loop.create_task(ws_manager.broadcast_alert(a, "NEW_ALERT"))
                 for r in resolved_alerts:
                     loop.create_task(ws_manager.broadcast_alert(r, "ALERT_RESOLVED"))
+                if correlated_incidents:
+                    for inc in correlated_incidents:
+                        loop.create_task(ws_manager.broadcast_incident(inc.to_dict(), "INCIDENT_UPDATE"))
         except Exception as e:
             logger.debug("Failed to broadcast monitoring update via WebSocket: %s", e)
 
@@ -106,8 +129,9 @@ class MonitoringService:
         telemetry: SystemTelemetry,
         new_alerts: List[dict],
         resolved_alerts: List[dict],
+        correlated_incidents: Optional[List[CorrelatedIncident]] = None,
     ) -> None:
-        """Stores collected metrics and alert changes in PostgreSQL."""
+        """Stores collected metrics, alert changes, and correlated incidents in PostgreSQL."""
         if not self.db_factory:
             return
 
@@ -197,6 +221,48 @@ class MonitoringService:
                         "resolved_at": resolved_dict.get("resolved_at", datetime.now(timezone.utc)),
                     }
                 )
+
+            # Persist / update correlated incidents in database
+            if correlated_incidents:
+                for c_inc in correlated_incidents:
+                    db_inc = db.query(IncidentModel).filter(IncidentModel.id == c_inc.id).first()
+                    if db_inc:
+                        db_inc.title = c_inc.title
+                        db_inc.severity = c_inc.severity
+                        db_inc.status = c_inc.status
+                        db_inc.probable_cause = c_inc.probable_cause
+                        db_inc.root_cause = c_inc.probable_cause
+                        db_inc.correlation_score = c_inc.correlation_score
+                        db_inc.affected_metrics = c_inc.affected_metrics
+                        db_inc.affected_events = c_inc.affected_events
+                        db_inc.updated_at = c_inc.updated_at
+                    else:
+                        new_db_inc = IncidentModel(
+                            id=c_inc.id,
+                            service_name=c_inc.service,
+                            title=c_inc.title,
+                            description=f"Correlated operational incident across {len(c_inc.affected_metrics)} metrics.",
+                            severity=c_inc.severity,
+                            status=c_inc.status,
+                            probable_cause=c_inc.probable_cause,
+                            root_cause=c_inc.probable_cause,
+                            correlation_score=c_inc.correlation_score,
+                            affected_metrics=c_inc.affected_metrics,
+                            affected_events=c_inc.affected_events,
+                            created_at=c_inc.created_at,
+                            updated_at=c_inc.updated_at,
+                        )
+                        db.add(new_db_inc)
+                        # Add initial event
+                        initial_evt = IncidentEventModel(
+                            incident_id=c_inc.id,
+                            event_type="CORRELATED_INCIDENT_OPENED",
+                            description=f"Automated Event Correlation grouped {len(c_inc.affected_events)} alerts into {c_inc.id}.",
+                            actor="EventCorrelationEngine",
+                            event_data={"score": c_inc.correlation_score, "metrics": c_inc.affected_metrics},
+                            created_at=c_inc.created_at,
+                        )
+                        db.add(initial_evt)
 
             db.commit()
         except Exception as exc:
