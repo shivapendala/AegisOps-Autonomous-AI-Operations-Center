@@ -195,36 +195,74 @@ AegisOps exposes REST endpoints under `/api` (with `/api/v1` aliases):
 
 ## 7. Architecture
 
-```
-                                  +-----------------------------+
-                                  |     React + TypeScript      |
-                                  |     Operations Dashboard    |
-                                  +--------------+--------------+
-                                                 |
-                                  HTTP REST / WS | ws://.../ws/monitor
-                                                 v
-+-----------------------------------------------------------------------------------------------+
-|                                      AegisOps Backend                                          |
-|                                                                                               |
-|  +-----------------------+     +--------------------------+     +--------------------------+  |
-|  |   System Collector    |     |  Alert Rule Engine       |     | Event Correlation Engine |  |
-|  |   (psutil Hardware)   | --> |  (Configurable Warning & | --> | (4-Factor Grouping       |  |
-|  +-----------------------+     |   Critical Thresholds)   |     |  Score >= 60 -> Incident)|  |
-|                                +--------------------------+     +------------+-------------+  |
-|  +-----------------------+                                                   |                |
-|  |   Simulation Engine   |                                                   v                |
-|  |   (5 Microservices:   | -------------------------------------------> +----+-------------+  |
-|  |    Payment, Auth,     |                                              | AI Root Cause    |  |
-|  |    Order, DB, Notif)  |                                              | Analysis (RCA)   |  |
-|  +-----------------------+                                              | (Mock / LLM)     |  |
-|                                                                         +----+-------------+  |
-+------------------------------------------------------------------------------|----------------+
-                                                                               |
-                                                                               v
-                                                                  +--------------------------+
-                                                                  | PostgreSQL Database (15) |
-                                                                  | (Persistent Volume)      |
-                                                                  +--------------------------+
+### System Architecture Diagram
+
+```mermaid
+flowchart TD
+    subgraph ClientLayer ["Client & Operations Presentation Layer"]
+        Browser["React 18 + TypeScript Dashboard<br/>(Tailwind CSS + Recharts + Lucide)"]
+        WSClient["Real-time WebSocket Client<br/>(/ws/monitor)"]
+        Browser <--> WSClient
+    end
+
+    subgraph IngressLayer ["Ingress & Reverse Proxy (Port 5173 / 80)"]
+        Nginx["Nginx Alpine Reverse Proxy<br/>(SPA Routing, Gzip, WebSocket Pass-through)"]
+    end
+
+    subgraph BackendLayer ["FastAPI Core Services (Port 8000)"]
+        FastAPI["FastAPI Application Factory & Lifespan"]
+        WSManager["Centralized WebSocket Manager<br/>(Real-Time Broadcast Engine)"]
+        
+        subgraph MonitoringEngine ["Autonomous Monitoring & Telemetry Subsystem"]
+            Collector["System Collector (psutil)<br/>CPU, RAM, Disk, Net, Procs"]
+            ThresholdEngine["Alert Rule Engine<br/>Warning & Critical Evaluation"]
+            Simulation["Multi-Service Simulation Engine<br/>(Payment, Auth, Order, DB, Notif)"]
+        end
+
+        subgraph CorrelationSubsystem ["Event Correlation & Incident Engine"]
+            CorrEngine["4-Factor Event Correlation Engine<br/>Score >= 60 -> Incident Clustering"]
+            IncManager["Incident Lifecycle State Machine<br/>OPEN -> INVESTIGATING -> RESOLVED -> CLOSED"]
+        end
+
+        subgraph AIRCA ["AI Root Cause Analysis Subsystem"]
+            RCAInvestigator["Incident Context Collector<br/>(Alerts, Metrics, Services, Audit Logs)"]
+            AIProvider{"AI Provider Abstraction"}
+            MockAI["Deterministic MockAIProvider<br/>(Zero-Dependency SRE Heuristics)"]
+            LLM["LLMProvider<br/>(OpenAI / Azure / Anthropic)"]
+        end
+    end
+
+    subgraph DatastoreLayer ["Persistence Layer (PostgreSQL 15)"]
+        DB[(PostgreSQL Database<br/>Persistent Volume: postgres_data)]
+        Tables["Tables: services, metrics, alerts,<br/>incidents, incident_events, recommendations, audit_logs"]
+        DB --- Tables
+    end
+
+    %% Wiring
+    Browser -->|HTTP REST: /api/*| Nginx
+    WSClient -->|WebSocket: /ws/*| Nginx
+    Nginx -->|Proxy Pass: /api/*| FastAPI
+    Nginx -->|Proxy Pass: /ws/*| WSManager
+
+    Collector -->|System Telemetry (2.0s)| ThresholdEngine
+    Simulation -->|Simulated Telemetry (2.0s)| ThresholdEngine
+    ThresholdEngine -->|Deduplicated Alerts| CorrEngine
+    Simulation -->|Cascading Alerts| CorrEngine
+
+    CorrEngine -->|Grouped Incidents| IncManager
+    IncManager -->|On Incident Creation| RCAInvestigator
+    RCAInvestigator --> AIProvider
+    AIProvider --> MockAI
+    AIProvider -.->|If API Key Present| LLM
+    MockAI -->|Root Cause, Evidence, Recommendations| IncManager
+
+    FastAPI -->|SQLAlchemy Sync + Asyncpg| DB
+    IncManager -->|Persist Incidents & Audit Trails| DB
+    ThresholdEngine -->|Persist Metrics & Alerts| DB
+
+    ThresholdEngine -.->|Broadcast Metrics & Alerts| WSManager
+    IncManager -.->|Broadcast Status Changes| WSManager
+    WSManager -.->|JSON Streaming Events| WSClient
 ```
 
 ### Event Correlation Logic
@@ -237,31 +275,98 @@ Multiple related alerts are grouped into **ONE incident** rather than triggering
 
 ---
 
-## 8. Demo Instructions
+## 8. Realistic Demo Workflow
 
-The AegisOps dashboard includes interactive simulation buttons designed for live presentations and architecture drills.
+Follow this step-by-step walkthrough during presentations or system verification:
 
-1. Open the dashboard at [http://localhost:5173](http://localhost:5173).
-2. Look at the top **DEMO / SIMULATION SYSTEM** control bar.
-3. Test the demonstration failure scenarios:
-   - **`[Normal]`**: Baseline operation. All 5 services (Payment API, Authentication API, Order Service, PostgreSQL Database, Notification Service) show green `HEALTHY` status.
-   - **`[CPU Spike]`**: Simulates compute saturation on Order Service. Watch CPU rise above $92\%$, critical alerts generate, and the incident panel update in real time.
-   - **`[Database Overload]`**: Simulates connection pool exhaustion on PostgreSQL Database (>95%). Demonstrates cascade into degraded query latency.
-   - **`[Payment Failure]`** (Cascading Multi-Vector Drill):
-     - Simulates simultaneous cascading stress on **Payment API**:
-       * CPU: $92\%$
-       * Database Connections: $95\%$
-       * API Latency: $2.8\text{s}$
-       * HTTP 500 Errors: $14.8\%$
-     - **Result**: The Event Correlation Engine captures all 4 alerts and groups them into **ONE single unified incident** (`Payment API degradation`).
-     - Click the incident card in the **Active Incidents Panel** to inspect the **Incident Details Modal** with the 12 diagnostic dimensions, AI root cause ("Database connection pool exhaustion"), confidence score, evidence list, and recommended remediation actions.
-   - **`[Recover System]`**: Instantly resolves active simulation alerts, recovers all services to `HEALTHY`, and returns metrics to baseline.
+```
++---------------+     +-------------+     +-------------------+     +-------------------------+
+| Normal System | --> |  CPU Spike  | --> | Database Overload | --> |  API Latency Increase   |
++---------------+     +-------------+     +-------------------+     +-------------------------+
+                                                                                 |
+                                                                                 v
++------------------+     +-------------------+     +--------------------+     +-------------------+
+|  Root Cause &    | <-- | AI Investigation  | <-- | ONE Critical       | <-- |  Multiple Alerts  |
+|  Recommendations |     |  (MockAIProvider) |     | Correlated Incident|     | (Event Correlation|
++------------------+     +-------------------+     +--------------------+     +-------------------+
+         |
+         v
++----------------------+
+|  Operator Resolves   |
+|  & Closes Incident   |
++----------------------+
+```
+
+### Step 1: Normal System
+* Click **`[Normal]`** on the top control bar.
+* **Observe**:
+  * Overall status indicates **SYSTEM: OPERATIONAL**.
+  * All 5 microservices in the *Simulated Microservices Telemetry* grid are green (**HEALTHY**).
+  * Latencies average $<45\text{ms}$, CPU is $<35\%$, error rates are $<0.1\%$, and database connection pools are $<35\%$.
+  * Real-time metrics stream smoothly over the WebSocket without page refresh.
+
+### Step 2: CPU Spike
+* Click **`[CPU Spike]`**.
+* **Observe**:
+  * Compute pressure immediately surges on **Order Service** ($\text{CPU} > 94\%$).
+  * A critical warning alert is generated and appears in the **Active Alerts Table**.
+  * The system status transitions to **DEGRADED**.
+
+### Step 3: Database Overload
+* Click **`[Database Overload]`**.
+* **Observe**:
+  * **PostgreSQL Database** connection pool saturates to $>96\%$, query latency degrades to $>450\text{ms}$.
+  * Cascading pressure affects dependent downstream services (**Payment API** and **Order Service** enter **DEGRADED** states).
+  * Additional alerts populate the live stream.
+
+### Step 4 & 5: Combined Payment Failure (API Latency Surge & Multiple Alerts)
+* Click **`[Payment Failure]`**.
+* **Observe**:
+  * Four cascading events fire in rapid succession on **Payment API**:
+    1. **CPU Spike**: `cpu_usage = 92.4%` (Critical)
+    2. **Database Overload**: `database_connections = 95.6%` (Critical)
+    3. **API Latency Surge**: `api_latency = 2.8s` (Critical)
+    4. **HTTP Error Surge**: `http_500_errors = 14.8%` (Critical)
+
+### Step 6 & 7: Event Correlation $\to$ ONE Critical Incident
+* The **Event Correlation Engine** evaluates all 4 incoming alerts against service, time window, metric affinity, and severity.
+* **Observe**:
+  * Instead of creating 4 separate confusing incidents, the correlation engine combines them into **EXACTLY ONE unified incident**:
+    * **Title**: `Payment Api degradation`
+    * **Service**: `Payment API`
+    * **Severity**: `CRITICAL`
+    * **Correlation Score**: $100\%$
+  * The **Active Incidents Panel** displays the single consolidated incident card with tags for all 4 affected metrics (`cpu_usage`, `database_connections`, `api_latency`, `http_500_errors`).
+
+### Step 8 & 9: AI Investigation $\to$ Root Cause
+* Click the incident card or click **Details** to open the **Incident Details Modal Console**.
+* **Observe**:
+  * **AI Diagnosis**: Automated RCA executed by `MockAIProvider` without requiring external API keys.
+  * **Probable Root Cause**: `Database connection pool exhaustion`.
+  * **Confidence Score**: `91%`.
+  * **Evidence Points**:
+    * *Database connections increased to 96%*
+    * *API latency increased from 200ms to 2.8s*
+    * *HTTP 500 errors increased*
+    * *CPU increased after database saturation*
+
+### Step 10: Recommended Actions
+* In the modal, review the AI remediation plan:
+  1. *Increase database connection pool and investigate long-running queries.*
+  2. *Enable connection pool keepalive and review slow query log for missing indexes.*
+  3. *Implement circuit-breaker pattern to gracefully degrade traffic during DB saturation.*
+
+### Step 11: Operator Resolves Incident
+* Click **Start Investigation** $\to$ status transitions to **INVESTIGATING**.
+* Click **Resolve Incident** $\to$ enter resolution notes (e.g., *"Scaled connection pool to 64 and restarted worker pods"*) $\to$ status transitions to **RESOLVED** and stamps `resolved_at`.
+* Click **Close Incident** $\to$ status transitions to **CLOSED**.
+* Click **`[Recover System]`** on the top bar to return all microservices to healthy baseline.
 
 ---
 
 ## 9. Testing Instructions
 
-AegisOps comes with 56 comprehensive automated unit and integration tests:
+AegisOps comes with 66 comprehensive automated unit and integration tests:
 
 ```bash
 # Run the complete test suite
@@ -269,6 +374,7 @@ python -m pytest -p no:asyncio -v tests/
 ```
 
 ### Test Suite Breakdown
+* `tests/test_automated_backend.py`: Comprehensive backend tests covering Health, Metrics, Alerts, Thresholds, Correlation, Incidents, Lifecycle transitions, Mock AI, WebSocket, and the 4-part cascading failure scenario.
 * `tests/test_simulation_engine.py`: Multi-service simulation metrics, failure scenarios, and cascading alert correlation into 1 incident.
 * `tests/test_incident_management.py`: Incident lifecycle state transitions (`OPEN` $\to$ `INVESTIGATING` $\to$ `RESOLVED` $\to$ `CLOSED`), database persistence, and detail endpoints.
 * `tests/test_ai_rca.py`: Root cause analysis provider abstractions, evidence aggregation, and fallback mechanisms.
