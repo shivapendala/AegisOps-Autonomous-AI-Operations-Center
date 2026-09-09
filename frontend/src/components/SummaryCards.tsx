@@ -30,48 +30,48 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* 1. Total Services */}
-      <div className="rounded-xl border border-slate-800 bg-[#0e1628] p-5 shadow-lg backdrop-blur-sm transition hover:border-slate-700">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-red-300 hover:shadow-md">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Services</span>
-          <div className="p-2 rounded-lg bg-cyan-950/40 border border-cyan-500/30 text-cyan-400">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Services</span>
+          <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-600">
             <Server className="h-5 w-5" />
           </div>
         </div>
         <div className="flex items-baseline space-x-2 mb-2">
-          <span className="text-3xl font-bold tracking-tight text-white">{totalServices}</span>
-          <span className="text-xs text-slate-400 font-mono">Cataloged</span>
+          <span className="text-3xl font-bold tracking-tight text-slate-900">{totalServices}</span>
+          <span className="text-xs text-slate-500 font-mono">Cataloged</span>
         </div>
-        <div className="mt-3 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-2.5">
+        <div className="mt-3 flex items-center justify-between text-xs text-slate-500 border-t border-slate-100 pt-2.5">
           <span>Tier-1 Critical:</span>
-          <span className="font-mono text-cyan-300 font-semibold">{criticalServices} services</span>
+          <span className="font-mono text-red-600 font-bold">{criticalServices} services</span>
         </div>
       </div>
 
       {/* 2. Healthy Services */}
-      <div className="rounded-xl border border-slate-800 bg-[#0e1628] p-5 shadow-lg backdrop-blur-sm transition hover:border-slate-700">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-red-300 hover:shadow-md">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Healthy Services</span>
-          <div className="p-2 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-emerald-400">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Healthy Services</span>
+          <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-600">
             <CheckCircle2 className="h-5 w-5" />
           </div>
         </div>
         <div className="flex items-baseline space-x-2 mb-2">
-          <span className="text-3xl font-bold tracking-tight text-white">{healthyServices}</span>
-          <span className="text-xs text-slate-400">/ {totalServices}</span>
+          <span className="text-3xl font-bold tracking-tight text-slate-900">{healthyServices}</span>
+          <span className="text-xs text-slate-500">/ {totalServices}</span>
           <span
             className={`ml-auto text-xs px-2 py-0.5 rounded font-mono font-bold ${
               healthPercent >= 90
-                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : 'bg-amber-50 text-amber-700 border border-amber-200'
             }`}
           >
             {healthPercent}% SLA
           </span>
         </div>
         <div className="mt-3">
-          <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden border border-slate-800">
+          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden border border-slate-200">
             <div
-              className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all duration-500"
+              className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
               style={{ width: `${healthPercent}%` }}
             />
           </div>
@@ -80,35 +80,35 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
 
       {/* 3. Active Alerts */}
       <div
-        className={`rounded-xl border p-5 shadow-lg backdrop-blur-sm transition ${
+        className={`rounded-xl border p-5 shadow-sm transition hover:shadow-md ${
           criticalAlerts > 0
-            ? 'border-red-500/40 bg-red-950/10'
+            ? 'border-red-300 bg-red-50/50'
             : activeAlerts.length > 0
-            ? 'border-amber-500/30 bg-amber-950/10'
-            : 'border-slate-800 bg-[#0e1628]'
+            ? 'border-amber-300 bg-amber-50/50'
+            : 'border-slate-200 bg-white'
         }`}
       >
         <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Alerts</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Active Alerts</span>
           <div
             className={`p-2 rounded-lg border ${
               criticalAlerts > 0
-                ? 'bg-red-500/20 border-red-500/40 text-red-400'
-                : 'bg-amber-500/20 border-amber-500/40 text-amber-400'
+                ? 'bg-red-100 border-red-300 text-red-600'
+                : 'bg-amber-100 border-amber-300 text-amber-700'
             }`}
           >
             <AlertTriangle className="h-5 w-5" />
           </div>
         </div>
         <div className="flex items-baseline space-x-2 mb-2">
-          <span className="text-3xl font-bold tracking-tight text-white">{activeAlerts.length}</span>
-          <span className="text-xs text-slate-400">breaches</span>
+          <span className="text-3xl font-bold tracking-tight text-slate-900">{activeAlerts.length}</span>
+          <span className="text-xs text-slate-500">breaches</span>
         </div>
-        <div className="mt-3 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-2.5">
-          <span className="flex items-center gap-1 text-red-400 font-mono">
+        <div className="mt-3 flex items-center justify-between text-xs text-slate-500 border-t border-slate-100 pt-2.5">
+          <span className="flex items-center gap-1 text-red-600 font-mono font-bold">
             <strong>{criticalAlerts}</strong> Critical
           </span>
-          <span className="flex items-center gap-1 text-amber-400 font-mono">
+          <span className="flex items-center gap-1 text-amber-700 font-mono font-medium">
             <strong>{warningAlerts}</strong> Warning
           </span>
         </div>
@@ -116,33 +116,33 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
 
       {/* 4. Active Incidents */}
       <div
-        className={`rounded-xl border p-5 shadow-lg backdrop-blur-sm transition ${
+        className={`rounded-xl border p-5 shadow-sm transition hover:shadow-md ${
           criticalIncidents > 0
-            ? 'border-red-500/40 bg-red-950/10'
+            ? 'border-red-300 bg-red-50/50'
             : activeIncidents.length > 0
-            ? 'border-purple-500/30 bg-purple-950/10'
-            : 'border-slate-800 bg-[#0e1628]'
+            ? 'border-rose-300 bg-rose-50/50'
+            : 'border-slate-200 bg-white'
         }`}
       >
         <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Incidents</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Active Incidents</span>
           <div
             className={`p-2 rounded-lg border ${
               criticalIncidents > 0
-                ? 'bg-red-500/20 border-red-500/40 text-red-400'
-                : 'bg-purple-500/20 border-purple-500/40 text-purple-400'
+                ? 'bg-red-100 border-red-300 text-red-600'
+                : 'bg-rose-100 border-rose-300 text-rose-600'
             }`}
           >
             <AlertOctagon className="h-5 w-5" />
           </div>
         </div>
         <div className="flex items-baseline space-x-2 mb-2">
-          <span className="text-3xl font-bold tracking-tight text-white">{activeIncidents.length}</span>
-          <span className="text-xs text-slate-400 font-mono">Open/Triage</span>
+          <span className="text-3xl font-bold tracking-tight text-slate-900">{activeIncidents.length}</span>
+          <span className="text-xs text-slate-500 font-mono">Open/Triage</span>
         </div>
-        <div className="mt-3 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-2.5">
+        <div className="mt-3 flex items-center justify-between text-xs text-slate-500 border-t border-slate-100 pt-2.5">
           <span>AI Diagnoses:</span>
-          <span className="font-mono text-purple-300 font-semibold">{incidents.length} total logged</span>
+          <span className="font-mono text-red-700 font-bold">{incidents.length} total logged</span>
         </div>
       </div>
     </div>

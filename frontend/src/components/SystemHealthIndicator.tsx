@@ -28,19 +28,19 @@ export const SystemHealthIndicator: React.FC<SystemHealthIndicatorProps> = ({
     switch (systemStatus) {
       case 'CRITICAL':
         return {
-          badge: 'bg-red-950/40 text-red-400 border-red-500/40',
-          dot: 'bg-red-500',
+          badge: 'bg-red-100 text-red-700 border-red-300',
+          dot: 'bg-red-600',
           text: 'CRITICAL ATTENTION REQUIRED',
         };
       case 'DEGRADED':
         return {
-          badge: 'bg-amber-950/40 text-amber-400 border-amber-500/40',
+          badge: 'bg-amber-100 text-amber-800 border-amber-300',
           dot: 'bg-amber-500',
           text: 'PERFORMANCE DEGRADED',
         };
       default:
         return {
-          badge: 'bg-emerald-950/40 text-emerald-400 border-emerald-500/40',
+          badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
           dot: 'bg-emerald-500',
           text: 'ALL SYSTEMS NOMINAL',
         };
@@ -50,25 +50,25 @@ export const SystemHealthIndicator: React.FC<SystemHealthIndicatorProps> = ({
   const statusInfo = getStatusColor();
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-[#0e1628] p-5 shadow-lg backdrop-blur-sm">
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         {/* Main Status Badge */}
         <div className="flex items-center space-x-4">
           <div className="relative">
-            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-cyan-400 shadow-md">
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 shadow-sm">
               <ShieldCheck className="h-6 w-6" />
             </div>
-            <span className={`absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full ${statusInfo.dot} border-2 border-[#0e1628] animate-pulse`} />
+            <span className={`absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full ${statusInfo.dot} border-2 border-white animate-pulse`} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-white tracking-wide">System Health Indicator</h2>
+              <h2 className="text-base font-bold text-slate-900 tracking-wide">System Health Indicator</h2>
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border ${statusInfo.badge}`}>
                 {statusInfo.text}
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Host: <span className="font-mono text-slate-200">{telemetry?.host_name || 'localhost'}</span> · App: <span className="font-mono text-cyan-300">{health?.app_name || 'AegisOps Core'}</span>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Host: <span className="font-mono text-slate-700 font-semibold">{telemetry?.host_name || 'localhost'}</span> · App: <span className="font-mono text-red-700 font-bold">{health?.app_name || 'AegisOps Core'}</span>
             </p>
           </div>
         </div>
@@ -76,46 +76,46 @@ export const SystemHealthIndicator: React.FC<SystemHealthIndicatorProps> = ({
         {/* System Vitals Metric Chips */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {/* Uptime */}
-          <div className="rounded-lg bg-slate-900/80 border border-slate-800/90 p-2.5">
-            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] mb-1">
-              <Clock className="h-3 w-3 text-cyan-400" />
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
+            <div className="flex items-center gap-1.5 text-slate-500 text-[11px] mb-1">
+              <Clock className="h-3 w-3 text-red-600" />
               <span>System Uptime</span>
             </div>
-            <div className="text-xs font-mono font-bold text-white">
+            <div className="text-xs font-mono font-bold text-slate-900">
               {formatUptime(telemetry?.uptime_seconds || health?.uptime_seconds)}
             </div>
           </div>
 
           {/* Database */}
-          <div className="rounded-lg bg-slate-900/80 border border-slate-800/90 p-2.5">
-            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] mb-1">
-              <Database className="h-3 w-3 text-emerald-400" />
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
+            <div className="flex items-center gap-1.5 text-slate-500 text-[11px] mb-1">
+              <Database className="h-3 w-3 text-emerald-600" />
               <span>Storage Layer</span>
             </div>
-            <div className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+            <div className="text-xs font-mono font-bold text-emerald-700 flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               {health?.database?.toUpperCase() || 'POSTGRESQL'}
             </div>
           </div>
 
           {/* Process Count */}
-          <div className="rounded-lg bg-slate-900/80 border border-slate-800/90 p-2.5">
-            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] mb-1">
-              <Layers className="h-3 w-3 text-indigo-400" />
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
+            <div className="flex items-center gap-1.5 text-slate-500 text-[11px] mb-1">
+              <Layers className="h-3 w-3 text-slate-600" />
               <span>Active Threads</span>
             </div>
-            <div className="text-xs font-mono font-bold text-white">
+            <div className="text-xs font-mono font-bold text-slate-900">
               {telemetry?.process_count ? `${telemetry.process_count} procs` : '--'}
             </div>
           </div>
 
           {/* AI Detector */}
-          <div className="rounded-lg bg-slate-900/80 border border-slate-800/90 p-2.5">
-            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] mb-1">
-              <Sparkles className="h-3 w-3 text-purple-400" />
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
+            <div className="flex items-center gap-1.5 text-slate-500 text-[11px] mb-1">
+              <Sparkles className="h-3 w-3 text-red-600" />
               <span>AI Engine</span>
             </div>
-            <div className="text-xs font-mono font-bold text-purple-300">
+            <div className="text-xs font-mono font-bold text-red-700">
               {health?.ai_engine?.anomaly_detector || 'IsolationForest'}
             </div>
           </div>

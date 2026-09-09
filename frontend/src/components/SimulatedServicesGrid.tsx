@@ -11,22 +11,22 @@ export const SimulatedServicesGrid: React.FC<SimulatedServicesGridProps> = ({ se
     switch (status.toUpperCase()) {
       case 'HEALTHY':
         return (
-          <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/40 text-emerald-400 border border-emerald-500/30 font-semibold">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
             HEALTHY
           </span>
         );
       case 'DEGRADED':
         return (
-          <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950/40 text-amber-400 border border-amber-500/30 font-semibold">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+          <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-bold">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-600 animate-pulse"></span>
             DEGRADED
           </span>
         );
       default:
         return (
-          <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-950/40 text-rose-400 border border-rose-500/30 font-semibold">
-            <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-ping"></span>
+          <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-300 font-bold">
+            <span className="h-1.5 w-1.5 rounded-full bg-red-600 animate-ping"></span>
             CRITICAL
           </span>
         );
@@ -34,29 +34,29 @@ export const SimulatedServicesGrid: React.FC<SimulatedServicesGridProps> = ({ se
   };
 
   const getMetricColor = (val: number, warnThresh: number, critThresh: number) => {
-    if (val >= critThresh) return 'text-rose-400 font-bold';
-    if (val >= warnThresh) return 'text-amber-400 font-semibold';
-    return 'text-slate-200';
+    if (val >= critThresh) return 'text-red-600 font-bold';
+    if (val >= warnThresh) return 'text-amber-700 font-semibold';
+    return 'text-slate-800';
   };
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-[#0e1628] p-5 shadow-lg backdrop-blur-sm space-y-4">
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b border-slate-800/80">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b border-slate-200">
         <div>
-          <h3 className="text-sm font-semibold text-white tracking-wide flex items-center gap-2">
-            <Server className="h-4 w-4 text-cyan-400" />
+          <h3 className="text-sm font-bold text-slate-900 tracking-wide flex items-center gap-2">
+            <Server className="h-4 w-4 text-red-600" />
             Simulated Microservices Telemetry
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/40 text-cyan-300 border border-cyan-500/30">
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-semibold">
               DEMO / SIMULATION
             </span>
           </h3>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500">
             Real-time live multi-vector metrics: Latency, Request Rate, Error Rate, CPU, Memory, DB Connections
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
-          <Activity className="h-3.5 w-3.5 text-emerald-400" />
+        <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
+          <Activity className="h-3.5 w-3.5 text-emerald-600" />
           <span>
             {services.filter((s) => s.status === 'HEALTHY').length}/{services.length} Healthy
           </span>
@@ -70,16 +70,16 @@ export const SimulatedServicesGrid: React.FC<SimulatedServicesGridProps> = ({ se
             key={svc.service_name}
             className={`p-4 rounded-xl border transition-all duration-200 flex flex-col justify-between ${
               svc.status === 'CRITICAL'
-                ? 'border-rose-500/40 bg-rose-950/10 shadow-lg shadow-rose-950/20'
+                ? 'border-red-300 bg-red-50/60 shadow-sm'
                 : svc.status === 'DEGRADED'
-                ? 'border-amber-500/40 bg-amber-950/10'
-                : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
+                ? 'border-amber-300 bg-amber-50/50'
+                : 'border-slate-200 bg-slate-50/70 hover:border-red-200 hover:bg-white'
             }`}
           >
             {/* Service Top */}
             <div className="space-y-1.5 mb-3">
               <div className="flex items-center justify-between gap-1">
-                <span className="font-semibold text-xs text-white truncate" title={svc.service_name}>
+                <span className="font-bold text-xs text-slate-900 truncate" title={svc.service_name}>
                   {svc.service_name}
                 </span>
                 {getStatusBadge(svc.status)}
@@ -91,7 +91,7 @@ export const SimulatedServicesGrid: React.FC<SimulatedServicesGridProps> = ({ se
             </div>
 
             {/* Metrics Breakdown Grid */}
-            <div className="grid grid-cols-2 gap-2 text-[11px] font-mono border-t border-slate-800/80 pt-2.5">
+            <div className="grid grid-cols-2 gap-2 text-[11px] font-mono border-t border-slate-200 pt-2.5">
               {/* Latency */}
               <div className="space-y-0.5">
                 <span className="text-[10px] text-slate-500 block">Latency</span>
@@ -103,7 +103,7 @@ export const SimulatedServicesGrid: React.FC<SimulatedServicesGridProps> = ({ se
               {/* Request Rate */}
               <div className="space-y-0.5">
                 <span className="text-[10px] text-slate-500 block">Req Rate</span>
-                <span className="text-slate-200">{svc.request_rate.toFixed(0)}/s</span>
+                <span className="text-slate-800 font-semibold">{svc.request_rate.toFixed(0)}/s</span>
               </div>
 
               {/* Error Rate */}
