@@ -68,7 +68,7 @@ def test_mock_ai_provider_database_pool_exhaustion():
     assert result.probable_root_cause == "Database connection pool exhaustion"
     assert result.confidence_score >= 0.90
     assert len(result.evidence) >= 3
-    assert any("database connections" in e.lower() for e in result.evidence)
+    assert any("db connection" in e.lower() or "database connection" in e.lower() for e in result.evidence)
     assert any("latency" in e.lower() for e in result.evidence)
     assert len(result.recommended_actions) >= 2
     assert any("increase database connection pool" in a.lower() for a in result.recommended_actions)
@@ -257,3 +257,74 @@ def test_get_ai_provider_factory():
 
     llm_p = get_ai_provider("openai")
     assert isinstance(llm_p, LLMProvider)
+
+
+def test_step8_ai_root_cause_analysis_exact_example():
+    """
+    STEP 8 Verification:
+    AI receives:
+      Incident + Alerts + Metrics + Service information
+    Input:
+      Service: Payment API
+      CPU: 94%
+      Memory: 81%
+      DB connections: 96%
+      API latency: 2.8 sec
+      HTTP 500: 18%
+    AI produces:
+      Probable Root Cause: Database connection pool exhaustion
+      Confidence: 91%
+      Evidence:
+      - DB connections reached 96%
+      - API latency increased to 2.8 seconds
+      - HTTP 500 errors increased
+      - Payment requests timed out
+    """
+    provider = MockAIProvider()
+
+    investigation = IncidentInvestigation(
+        incident_id="INC-STEP8-PAYMENT",
+        incident_info={
+            "id": "INC-STEP8-PAYMENT",
+            "title": "Payment API degradation",
+            "service": "Payment API",
+            "severity": "CRITICAL",
+        },
+        service_info={
+            "name": "Payment API",
+            "type": "REST API",
+            "status": "DEGRADED",
+        },
+        correlated_alerts=[
+            {"metric": "CPU", "value": 94.0, "severity": "HIGH", "message": "High CPU utilization"},
+            {"metric": "DB connections", "value": 96.0, "severity": "HIGH", "message": "Database pool saturation"},
+            {"metric": "API latency", "value": 2.8, "severity": "HIGH", "message": "High API response time"},
+            {"metric": "HTTP 500", "value": 18.0, "severity": "CRITICAL", "message": "High HTTP 500 error rate"},
+        ],
+        recent_metrics={
+            "CPU": 94.0,
+            "Memory": 81.0,
+            "DB connections": 96.0,
+            "API latency": 2.8,
+            "HTTP 500": 18.0,
+        },
+    )
+
+    rca = provider.analyze_incident_sync(investigation)
+
+    # 1. Probable Root Cause: Database connection pool exhaustion
+    assert rca.probable_root_cause == "Database connection pool exhaustion"
+
+    # 2. Confidence: 91%
+    assert round(rca.confidence_score, 2) == 0.91
+
+    # 3. Evidence
+    expected_evidence = [
+        "DB connections reached 96%",
+        "API latency increased to 2.8 seconds",
+        "HTTP 500 errors increased",
+        "Payment requests timed out",
+    ]
+    for exp in expected_evidence:
+        assert exp in rca.evidence, f"Missing expected evidence: {exp}"
+
