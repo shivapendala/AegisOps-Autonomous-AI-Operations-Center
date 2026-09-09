@@ -43,6 +43,16 @@ export interface ServiceItem {
   endpoint_url?: string;
 }
 
+export interface TimelineEvent {
+  id: string;
+  event_type: 'ALERT' | 'INCIDENT' | 'SERVICE' | 'SYSTEM';
+  title: string;
+  description: string;
+  timestamp: string;
+  severity?: 'INFO' | 'WARNING' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  actor?: string;
+}
+
 export interface Incident {
   id: string;
   service_id?: number;
