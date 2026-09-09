@@ -38,6 +38,7 @@ class SystemTelemetry(BaseModel):
     network_sent_mb: float = Field(default=0.0, description="Megabytes sent since boot")
     network_recv_mb: float = Field(default=0.0, description="Megabytes received since boot")
     process_count: int = Field(default=0, ge=0, description="Number of active processes")
+    uptime_seconds: float = Field(default=0.0, ge=0.0, description="System uptime in seconds")
 
     model_config = {
         "json_encoders": {datetime: lambda v: v.isoformat()}

@@ -24,7 +24,7 @@ class ServiceModel(Base):
 
     # Relationships
     metrics = relationship("MetricModel", back_populates="service", cascade="all, delete-orphan")
-    alerts = relationship("AlertModel", back_populates="service", cascade="all, delete-orphan")
+    alerts = relationship("AlertModel", back_populates="service_rel", cascade="all, delete-orphan")
     incidents = relationship("IncidentModel", back_populates="service")
 
     def to_dict(self):

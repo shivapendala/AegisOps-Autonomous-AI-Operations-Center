@@ -1,36 +1,45 @@
-"""Pydantic schemas for Alerts."""
+"""Pydantic schemas for Alerts conforming to AegisOps operations standards."""
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field
 
 
 class AlertBase(BaseModel):
-    service_id: Optional[int] = None
-    title: str = Field(..., max_length=255)
-    description: Optional[str] = None
-    severity: str = Field(default="MEDIUM", max_length=32)
-    status: str = Field(default="ACTIVE", max_length=32)
-    source: str = Field(default="scikit-learn-detector", max_length=64)
-    trigger_value: Optional[float] = None
-    threshold_value: Optional[float] = None
+    service: str = Field(default="system-host", description="Associated service or host")
+    metric: str = Field(default="cpu_usage", description="Metric triggering the alert")
+    value: float = Field(..., description="Current observed metric value")
+    threshold: float = Field(..., description="Threshold breached")
+    severity: str = Field(default="WARNING", description="Severity level: WARNING or CRITICAL")
+    message: str = Field(..., description="Human-readable condition message")
+    status: str = Field(default="ACTIVE", description="Alert status: ACTIVE, RESOLVED, ACKNOWLEDGED")
 
 
 class AlertCreate(AlertBase):
-    pass
+    timestamp: Optional[datetime] = None
+    source: str = "manual"
+    service_id: Optional[int] = None
 
 
 class AlertUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    severity: Optional[str] = None
     status: Optional[str] = None
+    severity: Optional[str] = None
+    message: Optional[str] = None
     resolved_at: Optional[datetime] = None
 
 
 class AlertResponse(AlertBase):
     id: int
-    created_at: datetime
-    updated_at: datetime
+    timestamp: datetime
+    source: Optional[str] = None
+    service_id: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
+
+    # Compatibility fields
+    title: Optional[str] = None
+    description: Optional[str] = None
+    trigger_value: Optional[float] = None
+    threshold_value: Optional[float] = None
 
     model_config = {"from_attributes": True}
