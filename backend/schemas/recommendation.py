@@ -6,12 +6,13 @@ from pydantic import BaseModel, Field
 
 class RecommendationBase(BaseModel):
     incident_id: Optional[str] = None
-    title: str = Field(..., max_length=255)
-    description: str
+    action: Optional[str] = None
+    priority: str = "HIGH"
+    status: str = "PENDING"
+    title: Optional[str] = None
+    description: Optional[str] = None
     action_type: str = "REMEDIATION"
     confidence: float = 0.90
-    priority: str = "P2"
-    status: str = "PENDING"
     generated_by: str = "AegisOps-AI-LLM"
 
 
@@ -22,6 +23,6 @@ class RecommendationCreate(RecommendationBase):
 class RecommendationResponse(RecommendationBase):
     id: int
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
