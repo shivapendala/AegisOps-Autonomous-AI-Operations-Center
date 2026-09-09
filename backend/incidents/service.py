@@ -89,7 +89,13 @@ class IncidentService:
         best_incident: Optional[IncidentModel] = None
         best_score = 0.0
 
+        alert_time = _extract_timestamp(alert_dict)
         for inc in open_incidents:
+            # Temporal window constraint: alerts occurring outside the sliding window cannot merge
+            inc_time = _extract_timestamp(inc)
+            if abs((alert_time - inc_time).total_seconds()) > self.window_seconds:
+                continue
+
             score, breakdown = calculate_score(alert_dict, inc, self.window_seconds)
             if score >= self.threshold_score and score > best_score:
                 best_score = score
