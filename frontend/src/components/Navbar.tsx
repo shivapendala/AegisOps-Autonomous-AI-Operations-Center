@@ -1,11 +1,12 @@
 import React from 'react';
-import { Shield, Activity, Wifi, WifiOff, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Shield, Activity, Wifi, WifiOff, RefreshCw, AlertTriangle, CheckCircle2, AlertOctagon } from 'lucide-react';
 import { ConnectionState, HealthStatus } from '../types';
 
 interface NavbarProps {
   health: HealthStatus | null;
   connectionState: ConnectionState;
   reconnectDelay?: number;
+  systemStatus: 'OPERATIONAL' | 'DEGRADED' | 'CRITICAL';
   onRefresh: () => void;
   loading: boolean;
 }
@@ -14,6 +15,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   health,
   connectionState,
   reconnectDelay,
+  systemStatus,
   onRefresh,
   loading,
 }) => {
@@ -21,7 +23,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     switch (connectionState) {
       case 'connected':
         return (
-          <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-emerald-500/30 text-xs shadow-sm shadow-emerald-500/10">
+          <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-emerald-500/30 text-xs shadow-sm shadow-emerald-500/10">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -33,7 +35,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         );
       case 'reconnecting':
         return (
-          <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-amber-950/20 border border-amber-500/40 text-xs text-amber-300">
+          <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-amber-950/30 border border-amber-500/40 text-xs text-amber-300">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
@@ -56,8 +58,34 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-red-950/20 border border-red-500/40 text-xs text-red-300">
             <span className="h-2 w-2 rounded-full bg-red-500"></span>
             <span className="font-medium flex items-center gap-1 font-mono">
-              <WifiOff className="h-3.5 w-3.5" /> OFFLINE / DISCONNECTED
+              <WifiOff className="h-3.5 w-3.5" /> OFFLINE
             </span>
+          </div>
+        );
+    }
+  };
+
+  const renderSystemStatusBadge = () => {
+    switch (systemStatus) {
+      case 'CRITICAL':
+        return (
+          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-red-950/30 border border-red-500/40 text-xs font-mono font-semibold text-red-300">
+            <AlertOctagon className="h-3.5 w-3.5 text-red-400" />
+            <span>SYSTEM: CRITICAL</span>
+          </div>
+        );
+      case 'DEGRADED':
+        return (
+          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-amber-950/30 border border-amber-500/40 text-xs font-mono font-semibold text-amber-300">
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+            <span>SYSTEM: DEGRADED</span>
+          </div>
+        );
+      default:
+        return (
+          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/30 border border-emerald-500/40 text-xs font-mono font-semibold text-emerald-300">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+            <span>SYSTEM: OPERATIONAL</span>
           </div>
         );
     }
@@ -83,23 +111,26 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* System Status Indicators & Controls */}
-        <div className="flex items-center space-x-4">
-          {/* Dynamic WebSocket Connection Status Pill */}
+        <div className="flex items-center space-x-3 sm:space-x-4">
+          {/* Section 1: System Status */}
+          {renderSystemStatusBadge()}
+
+          {/* Section 1: WebSocket Connection Status */}
           {renderConnectionBadge()}
 
           {/* AI Engine Provider Badge */}
-          <div className="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
+          <div className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
             <Activity className="h-3.5 w-3.5 text-cyan-400" />
-            <span className="text-slate-400">AI Engine:</span>
+            <span className="text-slate-400">AI:</span>
             <span className="text-cyan-300 font-semibold uppercase">{health?.ai_engine?.provider || 'MOCK'}</span>
           </div>
 
-          {/* Manual Refresh Button */}
+          {/* Manual Refresh Sync Button */}
           <button
             onClick={onRefresh}
             disabled={loading}
             className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition disabled:opacity-50"
-            title="Sync Datastore"
+            title="Sync with Backend"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-cyan-400' : ''}`} />
           </button>

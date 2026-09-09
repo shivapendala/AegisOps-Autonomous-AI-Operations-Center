@@ -1,11 +1,12 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Cpu, Server, HardDrive, Layers } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Navbar } from './components/Navbar';
-import { MetricCard } from './components/MetricCard';
-import { LiveChart } from './components/LiveChart';
-import { AlertFeed } from './components/AlertFeed';
+import { SummaryCards } from './components/SummaryCards';
+import { TelemetryCharts, TelemetryDataPoint } from './components/TelemetryCharts';
+import { ActiveAlertsTable } from './components/ActiveAlertsTable';
+import { ActiveIncidentsPanel } from './components/ActiveIncidentsPanel';
+import { RecentEventsTimeline } from './components/RecentEventsTimeline';
+import { SystemHealthIndicator } from './components/SystemHealthIndicator';
 import { ServicesCatalog } from './components/ServicesCatalog';
-import { IncidentTable } from './components/IncidentTable';
 import {
   fetchHealth,
   fetchCurrentMetrics,
@@ -23,50 +24,76 @@ import {
   Incident,
   ServiceItem,
   SystemTelemetry,
+  TimelineEvent,
   WebSocketEvent,
 } from './types';
-
-interface ChartPoint {
-  time: string;
-  cpu: number;
-  memory: number;
-  disk: number;
-}
 
 export const App: React.FC = () => {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [telemetry, setTelemetry] = useState<SystemTelemetry | null>(null);
-  const [chartData, setChartData] = useState<ChartPoint[]>([]);
+  const [chartData, setChartData] = useState<TelemetryDataPoint[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [reconnectDelay, setReconnectDelay] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(false);
-  const [lastEventNotice, setLastEventNotice] = useState<string | null>(null);
+  const [toastNotice, setToastNotice] = useState<string | null>(null);
 
   const socketRef = useRef<MonitoringSocket | null>(null);
 
-  const appendChartPoint = useCallback((t: SystemTelemetry) => {
+  // Append incoming telemetry snapshot to rolling chart history
+  const appendTelemetryPoint = useCallback((t: SystemTelemetry) => {
     const timeLabel = new Date(t.timestamp).toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
     });
+
     setChartData((prev) => {
-      const next = [
+      const next: TelemetryDataPoint[] = [
         ...prev,
         {
           time: timeLabel,
           cpu: t.cpu_percent,
           memory: t.memory_percent,
           disk: t.disk_percent,
+          netSent: t.network_sent_mb ?? 0,
+          netRecv: t.network_recv_mb ?? 0,
         },
       ];
       return next.length > 30 ? next.slice(next.length - 30) : next;
     });
   }, []);
 
+  // Prepend event to the Recent Events timeline
+  const addTimelineEvent = useCallback((event: TimelineEvent) => {
+    setTimelineEvents((prev) => [event, ...prev].slice(0, 50));
+  }, []);
+
+  // Compute live overall system status
+  const systemStatus = useMemo((): 'OPERATIONAL' | 'DEGRADED' | 'CRITICAL' => {
+    const hasCriticalAlert = alerts.some(
+      (a) => a.status.toUpperCase() === 'ACTIVE' && a.severity.toUpperCase() === 'CRITICAL'
+    );
+    const hasCriticalIncident = incidents.some(
+      (i) => i.status.toUpperCase() !== 'RESOLVED' && i.severity.toUpperCase() === 'CRITICAL'
+    );
+    if (hasCriticalAlert || hasCriticalIncident) return 'CRITICAL';
+
+    const hasWarningAlert = alerts.some(
+      (a) => a.status.toUpperCase() === 'ACTIVE' && (a.severity.toUpperCase() === 'WARNING' || a.severity.toUpperCase() === 'HIGH')
+    );
+    const hasActiveIncident = incidents.some((i) => i.status.toUpperCase() !== 'RESOLVED');
+    const hasDegradedService = services.some((s) => s.status.toUpperCase() !== 'HEALTHY');
+
+    if (hasWarningAlert || hasActiveIncident || hasDegradedService) return 'DEGRADED';
+
+    return 'OPERATIONAL';
+  }, [alerts, incidents, services]);
+
+  // Handle incoming real-time WebSocket events
   const handleWebSocketMessage = useCallback(
     (event: WebSocketEvent) => {
       switch (event.type) {
@@ -74,18 +101,25 @@ export const App: React.FC = () => {
           const { telemetry: initTelem, active_alerts: initAlerts, services: initSvcs } = event.data;
           if (initTelem) {
             setTelemetry(initTelem);
-            appendChartPoint(initTelem);
+            appendTelemetryPoint(initTelem);
           }
           if (initAlerts) setAlerts(initAlerts);
           if (initSvcs) setServices(initSvcs);
-          setLastEventNotice('Synchronized live state over WebSocket');
+          addTimelineEvent({
+            id: `init-${Date.now()}`,
+            event_type: 'SYSTEM',
+            title: 'Telemetry Stream Initialized',
+            description: 'Established live real-time bidirectional WebSocket channel (/ws/monitor)',
+            timestamp: new Date().toISOString(),
+            actor: 'System Connection Manager',
+          });
           break;
         }
 
         case 'METRICS_UPDATE': {
           const telem: SystemTelemetry = event.data;
           setTelemetry(telem);
-          appendChartPoint(telem);
+          appendTelemetryPoint(telem);
           break;
         }
 
@@ -95,7 +129,16 @@ export const App: React.FC = () => {
             const filtered = prev.filter((a) => a.id !== newAlert.id);
             return [newAlert, ...filtered];
           });
-          setLastEventNotice(`Alert Triggered: ${newAlert.service} ${newAlert.metric} [${newAlert.severity}]`);
+          setToastNotice(`🚨 Alert Triggered: ${newAlert.service} ${newAlert.metric} [${newAlert.severity}]`);
+          addTimelineEvent({
+            id: `alt-${Date.now()}`,
+            event_type: 'ALERT',
+            title: `Alert: ${newAlert.service} ${newAlert.metric}`,
+            description: newAlert.message,
+            severity: newAlert.severity,
+            actor: 'psutil Collector & Threshold Engine',
+            timestamp: newAlert.timestamp || new Date().toISOString(),
+          });
           break;
         }
 
@@ -104,11 +147,20 @@ export const App: React.FC = () => {
           setAlerts((prev) =>
             prev.map((a) =>
               a.metric === resolved.metric && a.service === resolved.service
-                ? { ...a, status: 'RESOLVED', resolved_at: new Date().toISOString() }
+                ? { ...a, status: 'RESOLVED' }
                 : a
             )
           );
-          setLastEventNotice(`Alert Normalized: ${resolved.metric} on ${resolved.service}`);
+          setToastNotice(`✅ Alert Normalized: ${resolved.metric} on ${resolved.service}`);
+          addTimelineEvent({
+            id: `res-${Date.now()}`,
+            event_type: 'ALERT',
+            title: `Alert Normalized: ${resolved.metric}`,
+            description: `Telemetry recovered within nominal threshold limits on ${resolved.service}`,
+            severity: 'INFO',
+            actor: 'System Threshold Monitor',
+            timestamp: resolved.timestamp || new Date().toISOString(),
+          });
           break;
         }
 
@@ -123,7 +175,16 @@ export const App: React.FC = () => {
             }
             return [inc, ...prev];
           });
-          setLastEventNotice(`Incident Updated: ${inc.id} (${inc.status})`);
+          setToastNotice(`⚠️ Incident Update: ${inc.id} [${inc.status}]`);
+          addTimelineEvent({
+            id: `inc-${Date.now()}`,
+            event_type: 'INCIDENT',
+            title: `Incident ${inc.id}: ${inc.title}`,
+            description: inc.root_cause ? `AI Diagnosis: ${inc.root_cause}` : (inc.description || inc.status),
+            severity: inc.severity,
+            actor: 'AI Autonomous Operations Engine',
+            timestamp: inc.updated_at || inc.created_at || new Date().toISOString(),
+          });
           break;
         }
 
@@ -136,7 +197,14 @@ export const App: React.FC = () => {
                 : s
             )
           );
-          setLastEventNotice(`Service Status Changed: ${service_name} -> ${status}`);
+          addTimelineEvent({
+            id: `svc-${Date.now()}`,
+            event_type: 'SERVICE',
+            title: `Service Health Shift: ${service_name}`,
+            description: `Status changed to ${status}`,
+            actor: 'Health Check Evaluator',
+            timestamp: new Date().toISOString(),
+          });
           break;
         }
 
@@ -144,9 +212,10 @@ export const App: React.FC = () => {
           break;
       }
     },
-    [appendChartPoint]
+    [appendTelemetryPoint, addTimelineEvent]
   );
 
+  // Fetch initial REST snapshot
   const loadInitialData = useCallback(async () => {
     setLoading(true);
     try {
@@ -161,17 +230,43 @@ export const App: React.FC = () => {
       if (h) setHealth(h);
       if (t) {
         setTelemetry(t);
-        appendChartPoint(t);
+        appendTelemetryPoint(t);
       }
       setAlerts(alts);
       setServices(svcs);
       setIncidents(incs);
+
+      // Seed initial timeline events from recent incidents & alerts
+      const initialEvents: TimelineEvent[] = [];
+      incs.forEach((i) => {
+        initialEvents.push({
+          id: `init-inc-${i.id}`,
+          event_type: 'INCIDENT',
+          title: `Incident ${i.id}: ${i.title}`,
+          description: i.root_cause || i.description || 'Recorded incident',
+          severity: i.severity,
+          actor: 'AI Root Cause Engine',
+          timestamp: i.created_at,
+        });
+      });
+      alts.slice(0, 5).forEach((a) => {
+        initialEvents.push({
+          id: `init-alt-${a.id}`,
+          event_type: 'ALERT',
+          title: `Alert on ${a.service}: ${a.metric}`,
+          description: a.message,
+          severity: a.severity,
+          actor: 'psutil Collector',
+          timestamp: a.timestamp,
+        });
+      });
+      setTimelineEvents(initialEvents);
     } catch (err) {
       console.error('Initial data fetch error:', err);
     } finally {
       setLoading(false);
     }
-  }, [appendChartPoint]);
+  }, [appendTelemetryPoint]);
 
   useEffect(() => {
     loadInitialData();
@@ -197,6 +292,7 @@ export const App: React.FC = () => {
   const handleResolveIncident = async (id: string) => {
     try {
       await resolveIncident(id, 'Resolved via Operations Console action');
+      setToastNotice(`Incident ${id} marked as resolved`);
     } catch (err) {
       console.error('Error resolving incident:', err);
     }
@@ -209,132 +305,90 @@ export const App: React.FC = () => {
         'Simulated stress drill to test real-time WebSocket dashboard reactivity',
         'HIGH'
       );
+      setToastNotice('Simulated operational drill triggered');
     } catch (err) {
       console.error('Error simulating drill:', err);
     }
   };
 
-  // Format uptime cleanly
-  const formatUptime = (seconds?: number) => {
-    if (!seconds) return '--';
-    const d = Math.floor(seconds / (3600 * 24));
-    const h = Math.floor((seconds % (3600 * 24)) / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    if (d > 0) return `${d}d ${h}h ${m}m`;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m ${Math.floor(seconds % 60)}s`;
-  };
-
   return (
-    <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col font-sans">
+      {/* SECTION 1: Top Navigation (Logo, System Status, WebSocket Status) */}
       <Navbar
         health={health}
         connectionState={connectionState}
         reconnectDelay={reconnectDelay}
+        systemStatus={systemStatus}
         onRefresh={loadInitialData}
         loading={loading}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Real-time Event Toast / Banner */}
-        {lastEventNotice && (
-          <div className="rounded-lg border border-cyan-500/30 bg-cyan-950/20 px-4 py-2 text-xs text-cyan-300 flex items-center justify-between shadow-sm animate-fadeIn">
+        {/* Real-time Event Toast / Notification Banner */}
+        {toastNotice && (
+          <div className="rounded-lg border border-cyan-500/30 bg-cyan-950/30 px-4 py-2 text-xs text-cyan-200 flex items-center justify-between shadow-sm animate-fadeIn">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
               </span>
-              <span className="font-mono">{lastEventNotice}</span>
+              <span className="font-mono">{toastNotice}</span>
             </div>
             <button
-              onClick={() => setLastEventNotice(null)}
-              className="text-cyan-400 hover:text-cyan-200 text-xs font-mono"
+              onClick={() => setToastNotice(null)}
+              className="text-cyan-400 hover:text-cyan-200 text-xs font-mono ml-4"
             >
               dismiss
             </button>
           </div>
         )}
 
-        {/* Real-time Hardware Telemetry Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard
-            title="CPU Utilization"
-            value={telemetry?.cpu_percent !== undefined ? telemetry.cpu_percent : '--'}
-            unit="%"
-            icon={Cpu}
-            percentage={telemetry?.cpu_percent}
-            status={
-              telemetry && telemetry.cpu_percent >= 90
-                ? 'critical'
-                : telemetry && telemetry.cpu_percent >= 70
-                ? 'warning'
-                : 'normal'
-            }
-            subtext="Threshold: Warning 70% | Critical 90%"
-          />
+        {/* SECTION 2: Summary Cards (Total Services, Healthy Services, Active Alerts, Active Incidents) */}
+        <SummaryCards
+          services={services}
+          alerts={alerts}
+          incidents={incidents}
+        />
 
-          <MetricCard
-            title="Memory Usage"
-            value={telemetry?.memory_percent !== undefined ? telemetry.memory_percent : '--'}
-            unit="%"
-            icon={Server}
-            percentage={telemetry?.memory_percent}
-            status={
-              telemetry && telemetry.memory_percent >= 90
-                ? 'critical'
-                : telemetry && telemetry.memory_percent >= 75
-                ? 'warning'
-                : 'normal'
-            }
-            subtext="Threshold: Warning 75% | Critical 90%"
-          />
+        {/* SECTION 10: System Health Indicator (Live Host Health, Uptime, DB, Processes, AI Engine) */}
+        <SystemHealthIndicator
+          health={health}
+          telemetry={telemetry}
+          systemStatus={systemStatus}
+        />
 
-          <MetricCard
-            title="Disk Usage"
-            value={telemetry?.disk_percent !== undefined ? telemetry.disk_percent : '--'}
-            unit="%"
-            icon={HardDrive}
-            percentage={telemetry?.disk_percent}
-            status={
-              telemetry && telemetry.disk_percent >= 90
-                ? 'critical'
-                : telemetry && telemetry.disk_percent >= 80
-                ? 'warning'
-                : 'normal'
-            }
-            subtext="Threshold: Warning 80% | Critical 90%"
-          />
+        {/* SECTIONS 3, 4, 5, 6: Telemetry Charts (CPU, Memory, Disk, Network) */}
+        <TelemetryCharts
+          data={chartData}
+          currentTelemetry={telemetry}
+        />
 
-          <MetricCard
-            title="Processes & Uptime"
-            value={telemetry?.process_count !== undefined ? telemetry.process_count : '--'}
-            unit="tasks"
-            icon={Layers}
-            status="normal"
-            subtext={`Uptime: ${formatUptime(telemetry?.uptime_seconds)}`}
-          />
-        </div>
+        {/* SECTION 7: Active Alerts Table (Time, Service, Metric, Value, Severity, Status) */}
+        <ActiveAlertsTable
+          alerts={alerts}
+        />
 
-        {/* Real-time Streaming Time-series Chart */}
-        <LiveChart data={chartData} />
-
-        {/* Live Operational Alerts Feed */}
-        <AlertFeed alerts={alerts} />
-
-        {/* Monitored Infrastructure Services */}
-        <ServicesCatalog services={services} />
-
-        {/* Real-time Incident Triage Table */}
-        <IncidentTable
+        {/* SECTION 8: Active Incidents Panel (Triage, AI Root Cause, Severity, Actions) */}
+        <ActiveIncidentsPanel
           incidents={incidents}
           onResolve={handleResolveIncident}
           onSimulateDrill={handleSimulateDrill}
           loading={loading}
         />
+
+        {/* Monitored Services Catalog */}
+        <ServicesCatalog
+          services={services}
+        />
+
+        {/* SECTION 9: Recent Events Timeline (Chronological Audit Stream) */}
+        <RecentEventsTimeline
+          events={timelineEvents}
+        />
       </main>
 
       <footer className="border-t border-slate-800/80 bg-[#070b14] py-4 text-center text-xs text-slate-500 font-mono">
-        AegisOps Autonomous AI Operations Center &copy; 2026. Live Streaming via WebSocket (ws://localhost:8000/ws/monitor).
+        AegisOps Autonomous AI Operations Center &copy; 2026. Real-time Streaming via WebSocket (ws://localhost:8000/ws/monitor).
       </footer>
     </div>
   );
