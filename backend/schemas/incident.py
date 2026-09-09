@@ -1,7 +1,7 @@
 """Pydantic schemas for Incidents and Incident Events."""
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 from backend.schemas.recommendation import RecommendationResponse
 
 
@@ -40,8 +40,18 @@ class IncidentCreate(IncidentBase):
     id: Optional[str] = None
 
 
+class IncidentInvestigateRequest(BaseModel):
+    investigation_notes: str = "Investigation initiated by Operations Engineer"
+    actor: str = "Operations-Operator"
+
+
 class IncidentResolveRequest(BaseModel):
     resolution_notes: str = "Resolved by Operations Engineer"
+    actor: str = "Operations-Operator"
+
+
+class IncidentCloseRequest(BaseModel):
+    closure_notes: str = "Incident reviewed and closed by Operations Engineer"
     actor: str = "Operations-Operator"
 
 
@@ -55,7 +65,16 @@ class IncidentResponse(IncidentBase):
 
 
 class IncidentDetailResponse(IncidentResponse):
+    confidence: Optional[float] = None
+    evidence: Optional[List[str]] = []
+    recommended_actions: Optional[List[str]] = []
     events: List[IncidentEventResponse] = []
     recommendations: List[RecommendationResponse] = []
 
+    @computed_field
+    @property
+    def timeline(self) -> List[IncidentEventResponse]:
+        return self.events
+
     model_config = {"from_attributes": True}
+

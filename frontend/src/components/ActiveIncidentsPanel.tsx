@@ -6,6 +6,7 @@ interface ActiveIncidentsPanelProps {
   incidents: Incident[];
   onResolve: (id: string) => Promise<void>;
   onSimulateDrill: () => Promise<void>;
+  onSelectIncident?: (incident: Incident) => void;
   loading: boolean;
 }
 
@@ -13,6 +14,7 @@ export const ActiveIncidentsPanel: React.FC<ActiveIncidentsPanelProps> = ({
   incidents,
   onResolve,
   onSimulateDrill,
+  onSelectIncident,
   loading,
 }) => {
   const [resolvingId, setResolvingId] = useState<string | null>(null);
@@ -129,7 +131,10 @@ export const ActiveIncidentsPanel: React.FC<ActiveIncidentsPanelProps> = ({
               className="rounded-lg border border-slate-800/90 bg-slate-900/60 p-4 transition hover:border-slate-700"
             >
               <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
-                <div className="space-y-1.5 flex-1">
+                <div
+                  className="space-y-1.5 flex-1 cursor-pointer"
+                  onClick={() => onSelectIncident && onSelectIncident(incident)}
+                >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs font-bold text-cyan-400 bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-500/30">
                       {incident.id}
@@ -148,7 +153,9 @@ export const ActiveIncidentsPanel: React.FC<ActiveIncidentsPanelProps> = ({
                     </span>
                   </div>
 
-                  <h3 className="text-sm font-semibold text-white pt-1">{incident.title}</h3>
+                  <h3 className="text-sm font-semibold text-white pt-1 hover:text-cyan-300 transition">
+                    {incident.title}
+                  </h3>
                   {incident.description && (
                     <p className="text-xs text-slate-400">{incident.description}</p>
                   )}
@@ -173,8 +180,15 @@ export const ActiveIncidentsPanel: React.FC<ActiveIncidentsPanelProps> = ({
                   )}
                 </div>
 
-                {/* Resolve Action Button */}
-                <div className="md:self-center flex-shrink-0 pt-2 md:pt-0">
+                {/* Operator Actions */}
+                <div className="md:self-center flex-shrink-0 flex items-center gap-2 pt-2 md:pt-0">
+                  <button
+                    onClick={() => onSelectIncident && onSelectIncident(incident)}
+                    className="px-3 py-1.5 rounded-lg bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-300 hover:text-white text-xs font-semibold transition"
+                  >
+                    Details
+                  </button>
+
                   <button
                     onClick={() => handleResolveClick(incident.id)}
                     disabled={resolvingId === incident.id}
