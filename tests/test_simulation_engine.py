@@ -213,3 +213,99 @@ def test_simulation_api_endpoints(client):
     reset_res = client.post("/api/simulation/reset")
     assert reset_res.status_code == 200
     assert reset_res.json()["active_scenario"] == "NORMAL"
+
+
+def test_step11_payment_failure_simulation_endpoint(client, db_session):
+    """
+    STEP 11 Verification:
+    POST /api/simulation/payment-failure
+    Cascading Failure:
+      Payment API
+           ↓
+      10:31:01 CPU 94%
+           ↓
+      10:31:03 DB 96%
+           ↓
+      10:31:05 Latency 2.8 sec
+           ↓
+      10:31:07 HTTP 500 ↑
+    Produces:
+      4 ALERTS -> Correlation Engine -> ONE INCIDENT
+    """
+    from database.models.incident import IncidentModel
+    from database.models.incident_event import IncidentEventModel
+    from database.models.alert import AlertModel
+    from database.models.recommendation import IncidentRecommendationModel
+
+    # Trigger simulation endpoint
+    res = client.post("/api/simulation/payment-failure")
+    assert res.status_code == 200
+    data = res.json()
+
+    # 1. Verify Simulation Metadata
+    assert data["status"] == "success"
+    assert data["scenario"] == "COMBINED_PAYMENT_FAILURE"
+    assert data["service"] == "Payment API"
+    assert data["alerts_count"] == 4
+
+    # 2. Verify Timeline Steps (CPU 94%, DB 96%, Latency 2.8 sec, HTTP 500 18%)
+    timeline = data["timeline"]
+    assert len(timeline) == 4
+    metrics_in_timeline = [item["metric"] for item in timeline]
+    assert "CPU" in metrics_in_timeline
+    assert "DB connections" in metrics_in_timeline
+    assert "API latency" in metrics_in_timeline
+    assert "HTTP 500" in metrics_in_timeline
+
+    cpu_step = next(item for item in timeline if item["metric"] == "CPU")
+    assert "94" in cpu_step["value"]
+
+    db_step = next(item for item in timeline if item["metric"] == "DB connections")
+    assert "96" in db_step["value"]
+
+    lat_step = next(item for item in timeline if item["metric"] == "API latency")
+    assert "2.8" in lat_step["value"]
+
+    err_step = next(item for item in timeline if item["metric"] == "HTTP 500")
+    assert "18" in err_step["value"]
+
+    # 3. Verify Correlation Engine merged 4 alerts into ONE INCIDENT
+    inc_data = data["incident"]
+    incident_id = inc_data["id"]
+    assert incident_id.startswith("INC-")
+    assert inc_data["service"] == "Payment API"
+    assert inc_data["severity"] == "CRITICAL"
+    assert inc_data["status"] == "OPEN"
+    assert inc_data["correlation_score"] >= 60.0
+
+    # 4. Verify AI RCA and Recommendations on the incident
+    assert inc_data["probable_cause"] == "Database connection pool exhaustion"
+    assert inc_data["confidence_score"] == 91.0 or int(inc_data["confidence_score"]) == 91
+
+    # 5. Database Direct Verification
+    db_session.expire_all()
+    db_inc = db_session.query(IncidentModel).filter(IncidentModel.id == incident_id).first()
+    assert db_inc is not None
+    assert db_inc.service_name == "Payment API"
+    assert db_inc.probable_cause == "Database connection pool exhaustion"
+
+    # Verify 4 attached alerts in incident_events
+    events = (
+        db_session.query(IncidentEventModel)
+        .filter(IncidentEventModel.incident_id == incident_id, IncidentEventModel.alert_id.isnot(None))
+        .all()
+    )
+    assert len(events) == 4
+    attached_alert_ids = {e.alert_id for e in events}
+    assert len(attached_alert_ids) == 4
+
+    # Verify recommendations are PENDING
+    recs = (
+        db_session.query(IncidentRecommendationModel)
+        .filter(IncidentRecommendationModel.incident_id == incident_id)
+        .all()
+    )
+    assert len(recs) == 4
+    for r in recs:
+        assert r.status == "PENDING"
+
