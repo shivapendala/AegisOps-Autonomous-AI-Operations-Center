@@ -15,7 +15,7 @@ from database.models.metric import MetricModel
 from database.models.alert import AlertModel
 from database.models.incident import IncidentModel
 from database.models.incident_event import IncidentEventModel
-from database.models.recommendation import RecommendationModel
+from database.models.recommendation import IncidentRecommendationModel, RecommendationModel
 
 logger = logging.getLogger("aegisops.database.init")
 
@@ -174,6 +174,9 @@ def seed_initial_data(db: Session) -> None:
         description="Sustained P99 latency elevation and sporadic downstream connection timeouts.",
         severity="HIGH",
         status="INVESTIGATING",
+        correlation_score=92.0,
+        probable_cause="Database connection pool exhaustion and downstream gateway saturation.",
+        confidence_score=0.91,
         root_cause="Downstream bank gateway handshake latency and connection pool bottleneck.",
         impact_summary="Up to 4.8% of checkout authorizations experiencing high latency.",
         ai_remediation="Activate secondary failover gateway route and scale connection pool buffer.",
@@ -183,14 +186,23 @@ def seed_initial_data(db: Session) -> None:
     db.add(incident_1)
     db.flush()
 
-    # Incident Events Timeline
+    # Incident Events Timeline (Connecting Alerts to Incidents)
     events = [
         IncidentEventModel(
             incident_id=incident_id,
-            event_type="ANOMALY_DETECTED",
-            description="scikit-learn IsolationForest scored payment-processor latency at -0.285 (outlier).",
-            actor="AegisOps-AI-Engine",
+            alert_id=alert_1.id,
+            event_type="ALERT_ATTACHED",
+            description=f"Alert #{alert_1.id} ({alert_1.metric}) connected to incident",
+            actor="AegisOps-CorrelationEngine",
             event_data={"metric": "latency_p99", "observed": 845.0},
+        ),
+        IncidentEventModel(
+            incident_id=incident_id,
+            alert_id=alert_2.id,
+            event_type="ALERT_ATTACHED",
+            description=f"Alert #{alert_2.id} ({alert_2.metric}) connected to incident",
+            actor="AegisOps-CorrelationEngine",
+            event_data={"metric": "error_rate_5xx", "observed": 4.8},
         ),
         IncidentEventModel(
             incident_id=incident_id,
@@ -204,31 +216,33 @@ def seed_initial_data(db: Session) -> None:
             event_type="ROOT_CAUSE_ANALYSIS",
             description="LLM reasoning engine identified downstream connection saturation.",
             actor="BaseLLMService[mock]",
-            event_data={"confidence": 0.92},
+            event_data={"confidence": 0.91},
         ),
     ]
     db.add_all(events)
 
-    # AI Recommendations
+    # Incident Recommendations
     recs = [
-        RecommendationModel(
+        IncidentRecommendationModel(
             incident_id=incident_id,
+            action="Check database connection pool and scale capacity from 50 to 120",
+            priority="HIGH",
+            status="PENDING",
+            title="Expand Connection Pool Capacity",
+            description="Dynamically increase max_connections from 50 to 120 on payments worker pods.",
+            action_type="CONFIG_SCALE",
+            confidence=0.91,
+            generated_by="AegisOps-AI-LLM",
+        ),
+        IncidentRecommendationModel(
+            incident_id=incident_id,
+            action="Reroute transactions to standby payment provider route",
+            priority="HIGH",
+            status="PENDING",
             title="Reroute Transactions to Standby Payment Provider",
             description="Shift 50% of card checkout traffic to secondary payment processor endpoint to relieve pool queue.",
             action_type="TRAFFIC_REROUTE",
             confidence=0.94,
-            priority="P1",
-            status="PENDING",
-            generated_by="AegisOps-AI-LLM",
-        ),
-        RecommendationModel(
-            incident_id=incident_id,
-            title="Expand Connection Pool Capacity",
-            description="Dynamically increase max_connections from 50 to 120 on payments worker pods.",
-            action_type="CONFIG_SCALE",
-            confidence=0.88,
-            priority="P2",
-            status="PENDING",
             generated_by="AegisOps-AI-LLM",
         ),
     ]

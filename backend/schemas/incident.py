@@ -8,9 +8,10 @@ from backend.schemas.recommendation import RecommendationResponse
 class IncidentEventResponse(BaseModel):
     id: int
     incident_id: str
-    event_type: str
-    description: str
-    actor: str
+    alert_id: Optional[int] = None
+    event_type: Optional[str] = "ALERT_ATTACHED"
+    description: Optional[str] = ""
+    actor: Optional[str] = "AegisOps-Autopilot"
     event_data: Optional[Dict[str, Any]] = None
     created_at: datetime
 
@@ -27,6 +28,7 @@ class IncidentBase(BaseModel):
     status: str = "OPEN"
     root_cause: Optional[str] = None
     probable_cause: Optional[str] = None
+    confidence_score: Optional[float] = 0.0
     impact_summary: Optional[str] = None
     ai_remediation: Optional[str] = None
     anomaly_score: Optional[float] = None

@@ -10,7 +10,7 @@ from .metric import MetricModel
 from .alert import AlertModel
 from .incident import IncidentModel
 from .incident_event import IncidentEventModel
-from .recommendation import RecommendationModel
+from .recommendation import IncidentRecommendationModel, RecommendationModel
 from .audit_log import AuditLogModel
 from .metric_log import MetricLogModel
 
@@ -21,6 +21,7 @@ __all__ = [
     "AlertModel",
     "IncidentModel",
     "IncidentEventModel",
+    "IncidentRecommendationModel",
     "RecommendationModel",
     "AuditLogModel",
     "MetricLogModel",

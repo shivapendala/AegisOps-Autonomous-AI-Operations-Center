@@ -17,6 +17,7 @@ class IncidentModel(Base):
     status = Column(String(32), default="OPEN", nullable=False, index=True)
     root_cause = Column(Text, nullable=True)
     probable_cause = Column(Text, nullable=True)
+    confidence_score = Column(Float, default=0.0, nullable=True)
     impact_summary = Column(Text, nullable=True)
     ai_remediation = Column(Text, nullable=True)
     anomaly_score = Column(Float, nullable=True)
@@ -36,7 +37,7 @@ class IncidentModel(Base):
     # Relationships
     service = relationship("ServiceModel", back_populates="incidents")
     events = relationship("IncidentEventModel", back_populates="incident", cascade="all, delete-orphan", order_by="IncidentEventModel.created_at")
-    recommendations = relationship("RecommendationModel", back_populates="incident", cascade="all, delete-orphan")
+    recommendations = relationship("IncidentRecommendationModel", back_populates="incident", cascade="all, delete-orphan")
 
     def to_dict(self, include_relations: bool = False):
         resolved_service_name = self.service.name if self.service else self.service_name
@@ -49,12 +50,14 @@ class IncidentModel(Base):
             "description": self.description,
             "severity": self.severity,
             "status": self.status,
-            "root_cause": self.root_cause,
+            "correlation_score": self.correlation_score,
             "probable_cause": self.probable_cause or self.root_cause,
+            "confidence_score": self.confidence_score if self.confidence_score is not None else (self.metadata_json or {}).get("ai_root_cause_analysis", {}).get("confidence_score", 0.0),
+            "confidence": self.confidence_score if self.confidence_score is not None else (self.metadata_json or {}).get("ai_root_cause_analysis", {}).get("confidence_score", 0.0),
             "impact_summary": self.impact_summary,
+            "root_cause": self.root_cause,
             "ai_remediation": self.ai_remediation,
             "anomaly_score": self.anomaly_score,
-            "correlation_score": self.correlation_score,
             "affected_metrics": self.affected_metrics or [],
             "affected_events": self.affected_events or [],
             "metadata": self.metadata_json or {},
