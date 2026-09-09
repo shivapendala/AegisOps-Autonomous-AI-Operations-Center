@@ -75,7 +75,12 @@ def test_incidents_api_endpoints(client):
     assert get_resp.status_code == 200
     assert get_resp.json()["title"] == "API Gateway 502 Rate Spike"
 
-    # Resolve incident
+    # Start investigation (OPEN -> INVESTIGATING)
+    inv_resp = client.post(f"/api/v1/incidents/{inc_id}/investigate")
+    assert inv_resp.status_code == 200
+    assert inv_resp.json()["status"] == "INVESTIGATING"
+
+    # Resolve incident (INVESTIGATING -> RESOLVED)
     resolve_resp = client.post(
         f"/api/v1/incidents/{inc_id}/resolve",
         json={"resolution_notes": "Upstream proxy pool recycled", "actor": "DevOps Lead"},

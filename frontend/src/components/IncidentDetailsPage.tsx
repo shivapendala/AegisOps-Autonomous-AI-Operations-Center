@@ -505,47 +505,115 @@ export const IncidentDetailsPage: React.FC<IncidentDetailsPageProps> = ({
         </div>
 
         {/* ========================================================================= */}
-        {/* SECTION 4: PRIMARY ACTION BUTTONS                                         */}
+        {/* SECTION 4: STRICT WORKFLOW LIFECYCLE STEPPER & PRIMARY ACTION BUTTONS    */}
         {/* ========================================================================= */}
-        <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-2">
-          <button
-            onClick={handleStartInvestigation}
-            disabled={actionLoading !== null || incident?.status === 'RESOLVED' || incident?.status === 'CLOSED'}
-            className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium text-sm rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2"
-          >
-            {actionLoading === 'investigate' ? (
-              <RotateCw className="h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="h-4 w-4 fill-white" />
-            )}
-            <span>Start Investigation</span>
-          </button>
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+          {/* Visual Workflow Pipeline Stepper */}
+          <div className="flex items-center justify-between px-2 sm:px-6 text-xs font-mono">
+            <div className={`flex items-center gap-1.5 sm:gap-2 ${incident?.status === 'OPEN' ? 'text-red-700 font-bold' : 'text-slate-400'}`}>
+              <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${incident?.status === 'OPEN' ? 'bg-red-600 text-white animate-pulse' : (incident?.status === 'INVESTIGATING' || incident?.status === 'RESOLVED' || incident?.status === 'CLOSED') ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                {incident?.status !== 'OPEN' ? '✓' : '1'}
+              </span>
+              <span>OPEN</span>
+            </div>
+            <div className="flex-1 border-t border-slate-300 mx-2 sm:mx-4" />
+            <div className={`flex items-center gap-1.5 sm:gap-2 ${incident?.status === 'INVESTIGATING' ? 'text-blue-700 font-bold' : (incident?.status === 'RESOLVED' || incident?.status === 'CLOSED') ? 'text-emerald-700 font-semibold' : 'text-slate-400'}`}>
+              <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${incident?.status === 'INVESTIGATING' ? 'bg-blue-600 text-white animate-pulse' : (incident?.status === 'RESOLVED' || incident?.status === 'CLOSED') ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                {incident?.status === 'RESOLVED' || incident?.status === 'CLOSED' ? '✓' : '2'}
+              </span>
+              <span>INVESTIGATING</span>
+            </div>
+            <div className="flex-1 border-t border-slate-300 mx-2 sm:mx-4" />
+            <div className={`flex items-center gap-1.5 sm:gap-2 ${incident?.status === 'RESOLVED' ? 'text-emerald-700 font-bold' : incident?.status === 'CLOSED' ? 'text-slate-700 font-semibold' : 'text-slate-400'}`}>
+              <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${incident?.status === 'RESOLVED' ? 'bg-emerald-600 text-white animate-pulse' : incident?.status === 'CLOSED' ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                {incident?.status === 'CLOSED' ? '✓' : '3'}
+              </span>
+              <span>RESOLVED</span>
+            </div>
+            <div className="flex-1 border-t border-slate-300 mx-2 sm:mx-4" />
+            <div className={`flex items-center gap-1.5 sm:gap-2 ${incident?.status === 'CLOSED' ? 'text-slate-900 font-bold' : 'text-slate-400'}`}>
+              <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${incident?.status === 'CLOSED' ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                4
+              </span>
+              <span>CLOSED</span>
+            </div>
+          </div>
 
-          <button
-            onClick={handleResolveIncident}
-            disabled={actionLoading !== null || incident?.status === 'RESOLVED' || incident?.status === 'CLOSED'}
-            className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-medium text-sm rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2"
-          >
-            {actionLoading === 'resolve' ? (
-              <RotateCw className="h-4 w-4 animate-spin" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4" />
-            )}
-            <span>Resolve Incident</span>
-          </button>
+          {/* Workflow Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-2 border-t border-slate-200">
+            {/* 1. OPEN -> INVESTIGATING */}
+            <button
+              onClick={handleStartInvestigation}
+              disabled={actionLoading !== null || incident?.status !== 'OPEN'}
+              title={incident?.status === 'OPEN' ? 'Start AI Investigation' : 'Available only in OPEN status'}
+              className={`w-full sm:w-auto px-5 py-2.5 font-medium text-sm rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 ${
+                incident?.status === 'OPEN'
+                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                  : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+              }`}
+            >
+              {actionLoading === 'investigate' ? (
+                <RotateCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4" />
+              )}
+              <span>{incident?.status === 'OPEN' ? 'Start Investigation' : '1. Investigation Completed'}</span>
+            </button>
 
-          <button
-            onClick={handleCloseIncident}
-            disabled={actionLoading !== null || incident?.status === 'CLOSED'}
-            className="w-full sm:w-auto px-5 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white font-medium text-sm rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2"
-          >
-            {actionLoading === 'close' ? (
-              <RotateCw className="h-4 w-4 animate-spin" />
-            ) : (
-              <Lock className="h-4 w-4" />
-            )}
-            <span>Close Incident</span>
-          </button>
+            {/* 2. INVESTIGATING -> RESOLVED */}
+            <button
+              onClick={handleResolveIncident}
+              disabled={actionLoading !== null || incident?.status !== 'INVESTIGATING'}
+              title={
+                incident?.status === 'INVESTIGATING'
+                  ? 'Resolve Incident'
+                  : incident?.status === 'OPEN'
+                  ? 'Must start investigation first'
+                  : 'Already resolved'
+              }
+              className={`w-full sm:w-auto px-5 py-2.5 font-medium text-sm rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 ${
+                incident?.status === 'INVESTIGATING'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+              }`}
+            >
+              {actionLoading === 'resolve' ? (
+                <RotateCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+              <span>
+                {incident?.status === 'RESOLVED' || incident?.status === 'CLOSED'
+                  ? '2. Incident Resolved'
+                  : '2. Resolve Incident'}
+              </span>
+            </button>
+
+            {/* 3. RESOLVED -> CLOSED */}
+            <button
+              onClick={handleCloseIncident}
+              disabled={actionLoading !== null || incident?.status !== 'RESOLVED'}
+              title={
+                incident?.status === 'RESOLVED'
+                  ? 'Close Incident Ticket'
+                  : incident?.status === 'CLOSED'
+                  ? 'Incident is closed'
+                  : 'Must resolve incident before closing'
+              }
+              className={`w-full sm:w-auto px-5 py-2.5 font-medium text-sm rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 ${
+                incident?.status === 'RESOLVED'
+                  ? 'bg-slate-800 hover:bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+              }`}
+            >
+              {actionLoading === 'close' ? (
+                <RotateCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Lock className="h-4 w-4" />
+              )}
+              <span>{incident?.status === 'CLOSED' ? '3. Incident Closed' : '3. Close Incident'}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
