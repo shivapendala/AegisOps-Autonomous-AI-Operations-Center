@@ -162,7 +162,7 @@ def test_step6_incident_apis(client, db_session):
     assert isinstance(incidents, list)
     assert len(incidents) >= 1
 
-    target_inc = incidents[0]
+    target_inc = next((i for i in incidents if i.get("status") == "OPEN"), incidents[0])
     inc_id = target_inc["id"]
 
     # 2. GET /api/incidents/{incident_id}

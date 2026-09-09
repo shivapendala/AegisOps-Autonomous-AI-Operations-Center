@@ -507,20 +507,20 @@ export const IncidentDetailsModal: React.FC<IncidentDetailsModalProps> = ({
               </button>
             )}
 
-            {/* Action 2: Resolve */}
-            {incident.status !== 'RESOLVED' && incident.status !== 'CLOSED' && (
+            {/* Action 2: Resolve (Strict: Only when INVESTIGATING) */}
+            {incident.status === 'INVESTIGATING' && (
               <button
                 onClick={handleResolve}
                 disabled={actionLoading !== null}
-                className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 border border-red-600 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm shadow-red-500/20 disabled:opacity-50"
+                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 border border-emerald-600 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm shadow-emerald-500/20 disabled:opacity-50"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 {actionLoading === 'resolve' ? 'Resolving...' : 'Resolve Incident'}
               </button>
             )}
 
-            {/* Action 3: Close */}
-            {incident.status !== 'CLOSED' && (
+            {/* Action 3: Close (Strict: Only when RESOLVED) */}
+            {incident.status === 'RESOLVED' && (
               <button
                 onClick={handleClose}
                 disabled={actionLoading !== null}
@@ -529,6 +529,13 @@ export const IncidentDetailsModal: React.FC<IncidentDetailsModalProps> = ({
                 <Lock className="h-3.5 w-3.5" />
                 {actionLoading === 'close' ? 'Closing...' : 'Close Incident'}
               </button>
+            )}
+
+            {/* Terminal State: CLOSED */}
+            {incident.status === 'CLOSED' && (
+              <span className="text-xs font-mono font-semibold text-slate-500 px-2 py-1 bg-slate-100 rounded border border-slate-200 flex items-center gap-1.5">
+                <Lock className="h-3 w-3" /> Incident Closed
+              </span>
             )}
 
             <button

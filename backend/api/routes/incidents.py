@@ -27,6 +27,7 @@ from database.models.incident import IncidentModel
 from database.models.incident_event import IncidentEventModel
 from database.models.recommendation import IncidentRecommendationModel
 from database.session import get_sync_db
+from backend.incidents.workflow import validate_status_transition
 
 logger = logging.getLogger("aegisops.backend.api.incidents")
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
@@ -554,6 +555,7 @@ async def investigate_incident(
     Transitions status to INVESTIGATING and triggers AI root cause analysis.
     """
     inc = _get_incident_or_404(incident_id, db)
+    validate_status_transition(inc.status, "INVESTIGATING", incident_id=inc.id)
     req = payload or IncidentInvestigateRequest()
 
     now = datetime.now(timezone.utc)
@@ -608,6 +610,7 @@ async def resolve_incident(
     Transitions status to RESOLVED and records resolution timestamp.
     """
     inc = _get_incident_or_404(incident_id, db)
+    validate_status_transition(inc.status, "RESOLVED", incident_id=inc.id)
     req = payload or IncidentResolveRequest()
 
     now = datetime.now(timezone.utc)
@@ -655,6 +658,7 @@ async def close_incident(
     Transitions status to CLOSED and logs an audit trail event.
     """
     inc = _get_incident_or_404(incident_id, db)
+    validate_status_transition(inc.status, "CLOSED", incident_id=inc.id)
     req = payload or IncidentCloseRequest()
 
     now = datetime.now(timezone.utc)

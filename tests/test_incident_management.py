@@ -158,3 +158,83 @@ def test_incident_not_found_endpoints(client):
     assert client.post(f"/api/incidents/{invalid_id}/investigate", json={}).status_code == 404
     assert client.post(f"/api/incidents/{invalid_id}/resolve", json={}).status_code == 404
     assert client.post(f"/api/incidents/{invalid_id}/close", json={}).status_code == 404
+
+
+def test_step15_strict_incident_status_workflow(client, db_session):
+    """
+    STEP 15: Verify the strict linear workflow:
+        OPEN -> INVESTIGATING -> RESOLVED -> CLOSED
+    Random or out-of-order status transitions must be blocked with HTTP 400.
+    """
+    # 1. Create a brand-new incident in OPEN status
+    create_resp = client.post(
+        "/api/incidents",
+        json={
+            "title": "Payment Settlement API Slowdown",
+            "description": "High latency observed on settlement gateway",
+            "severity": "CRITICAL",
+        },
+    )
+    assert create_resp.status_code == 201
+    inc_id = create_resp.json()["id"]
+    assert create_resp.json()["status"] == "OPEN"
+
+    # 2. Block random jump: OPEN -> RESOLVED (must investigate first)
+    bad_resolve = client.post(f"/api/incidents/{inc_id}/resolve")
+    assert bad_resolve.status_code == 400
+    assert "investigation" in bad_resolve.json()["detail"].lower()
+
+    # 3. Block random jump: OPEN -> CLOSED (cannot skip to closed)
+    bad_close = client.post(f"/api/incidents/{inc_id}/close")
+    assert bad_close.status_code == 400
+
+    # 4. Valid transition: OPEN -> INVESTIGATING
+    inv_resp = client.post(f"/api/incidents/{inc_id}/investigate")
+    assert inv_resp.status_code == 200
+    assert inv_resp.json()["status"] == "INVESTIGATING"
+
+    # 5. Block duplicate investigation: INVESTIGATING -> INVESTIGATING
+    dup_inv = client.post(f"/api/incidents/{inc_id}/investigate")
+    assert dup_inv.status_code == 400
+
+    # 6. Block random jump: INVESTIGATING -> CLOSED (must resolve first)
+    skip_resolve_close = client.post(f"/api/incidents/{inc_id}/close")
+    assert skip_resolve_close.status_code == 400
+    assert "resolved" in skip_resolve_close.json()["detail"].lower()
+
+    # 7. Valid transition: INVESTIGATING -> RESOLVED
+    res_resp = client.post(
+        f"/api/incidents/{inc_id}/resolve",
+        json={"resolution_notes": "Added worker pool instances and restarted idle connections"},
+    )
+    assert res_resp.status_code == 200
+    assert res_resp.json()["status"] == "RESOLVED"
+    assert res_resp.json()["resolved_at"] is not None
+
+    # 8. Block invalid rollback: RESOLVED -> INVESTIGATING
+    rollback_inv = client.post(f"/api/incidents/{inc_id}/investigate")
+    assert rollback_inv.status_code == 400
+
+    # 9. Block duplicate resolution: RESOLVED -> RESOLVED
+    dup_res = client.post(f"/api/incidents/{inc_id}/resolve")
+    assert dup_res.status_code == 400
+
+    # 10. Valid transition: RESOLVED -> CLOSED
+    close_resp = client.post(
+        f"/api/incidents/{inc_id}/close",
+        json={"closure_notes": "Post-mortem completed; steady state confirmed"},
+    )
+    assert close_resp.status_code == 200
+    assert close_resp.json()["status"] == "CLOSED"
+
+    # 11. Block modification on terminal CLOSED state
+    closed_inv = client.post(f"/api/incidents/{inc_id}/investigate")
+    assert closed_inv.status_code == 400
+    assert "terminal" in closed_inv.json()["detail"].lower() or "closed" in closed_inv.json()["detail"].lower()
+
+    closed_res = client.post(f"/api/incidents/{inc_id}/resolve")
+    assert closed_res.status_code == 400
+
+    closed_close = client.post(f"/api/incidents/{inc_id}/close")
+    assert closed_close.status_code == 400
+
