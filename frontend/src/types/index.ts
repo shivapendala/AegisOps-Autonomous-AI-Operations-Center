@@ -146,7 +146,17 @@ export interface WebSocketEvent {
     | 'INCIDENT_UPDATE'
     | 'SERVICE_STATUS_CHANGE'
     | 'SIMULATION_UPDATE'
-    | 'PONG';
+    | 'PONG'
+    | 'new_alert'
+    | 'incident_created'
+    | 'incident_updated'
+    | 'incident_resolved'
+    | string;
   data?: any;
+  incident_id?: string | number;
+  alert_id?: string | number;
+  severity?: string;
+  title?: string;
   timestamp?: string;
 }
+

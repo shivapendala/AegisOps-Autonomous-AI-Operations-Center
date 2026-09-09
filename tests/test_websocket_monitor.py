@@ -126,3 +126,90 @@ def test_websocket_broadcast_events(client, db_session):
         assert msg5["type"] == "SERVICE_STATUS_CHANGE"
         assert msg5["data"]["service_name"] == "payment-processor"
         assert msg5["data"]["status"] == "DEGRADED"
+
+
+def test_step14_realtime_websocket_updates(client, db_session):
+    """
+    STEP 14: Verify WebSocket events for:
+    - new_alert
+    - incident_created (with incident_id: 101)
+    - incident_updated
+    - incident_resolved
+    """
+    seed_initial_data(db_session)
+    with client.websocket_connect("/ws/monitor") as websocket:
+        # Discard initial handshake
+        _ = websocket.receive_text()
+
+        # 1. Test new_alert broadcast
+        asyncio.run(
+            ws_manager.broadcast_new_alert(
+                {
+                    "id": 501,
+                    "service": "Payment API",
+                    "metric": "database_connections",
+                    "value": 96.0,
+                    "threshold": 85.0,
+                    "severity": "CRITICAL",
+                    "message": "Database connections saturated at 96%",
+                    "status": "ACTIVE",
+                }
+            )
+        )
+        msg_alert = json.loads(websocket.receive_text())
+        assert msg_alert["type"] == "new_alert"
+        assert msg_alert["alert_id"] == 501
+        assert msg_alert["data"]["service"] == "Payment API"
+        assert msg_alert["data"]["severity"] == "CRITICAL"
+
+        # 2. Test incident_created with incident_id: 101
+        asyncio.run(
+            ws_manager.broadcast_incident_created(
+                {
+                    "id": 101,
+                    "incident_id": 101,
+                    "title": "Payment API Degradation",
+                    "severity": "CRITICAL",
+                    "status": "OPEN",
+                    "probable_cause": "Database connection pool exhaustion",
+                }
+            )
+        )
+        msg_created = json.loads(websocket.receive_text())
+        assert msg_created["type"] == "incident_created"
+        assert msg_created["incident_id"] == 101
+        assert msg_created["severity"] == "CRITICAL"
+        assert msg_created["data"]["title"] == "Payment API Degradation"
+
+        # 3. Test incident_updated with incident_id: 101
+        asyncio.run(
+            ws_manager.broadcast_incident_updated(
+                {
+                    "id": "101",
+                    "title": "Payment API Degradation",
+                    "severity": "CRITICAL",
+                    "status": "INVESTIGATING",
+                }
+            )
+        )
+        msg_updated = json.loads(websocket.receive_text())
+        assert msg_updated["type"] == "incident_updated"
+        assert msg_updated["incident_id"] == 101
+        assert msg_updated["data"]["status"] == "INVESTIGATING"
+
+        # 4. Test incident_resolved with incident_id: 101
+        asyncio.run(
+            ws_manager.broadcast_incident_resolved(
+                {
+                    "id": "INC-101",
+                    "title": "Payment API Degradation",
+                    "severity": "CRITICAL",
+                    "status": "RESOLVED",
+                }
+            )
+        )
+        msg_resolved = json.loads(websocket.receive_text())
+        assert msg_resolved["type"] == "incident_resolved"
+        assert msg_resolved["incident_id"] == 101
+        assert msg_resolved["data"]["status"] == "RESOLVED"
+

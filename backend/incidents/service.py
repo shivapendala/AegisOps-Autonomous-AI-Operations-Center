@@ -133,6 +133,18 @@ class IncidentService:
             db.commit()
             db.refresh(best_incident)
             logger.info("Alert %s correlated with Incident %s (score=%.1f)", alert_id, best_incident.id, best_score)
+            try:
+                from backend.core.websocket_manager import ws_manager
+                import asyncio
+                payload = best_incident.to_dict()
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(ws_manager.broadcast_incident_updated(payload))
+                    loop.create_task(ws_manager.broadcast_incident(payload, "INCIDENT_UPDATE"))
+                except RuntimeError:
+                    pass
+            except Exception:
+                pass
             return best_incident, False, best_score
 
         # 3. No match -> Open a brand new incident
@@ -178,6 +190,18 @@ class IncidentService:
         db.commit()
         db.refresh(new_incident)
         logger.info("New Correlated Incident created: %s (%s)", inc_id, new_incident.title)
+        try:
+            from backend.core.websocket_manager import ws_manager
+            import asyncio
+            payload = new_incident.to_dict()
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(ws_manager.broadcast_incident_created(payload))
+                loop.create_task(ws_manager.broadcast_incident(payload, "INCIDENT_UPDATE"))
+            except RuntimeError:
+                pass
+        except Exception:
+            pass
         return new_incident, True, 100.0
 
     @staticmethod

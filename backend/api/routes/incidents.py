@@ -536,6 +536,7 @@ async def create_incident(payload: IncidentCreate, db: Session = Depends(get_syn
     db.refresh(new_inc)
     try:
         from backend.core.websocket_manager import ws_manager
+        await ws_manager.broadcast_incident_created(new_inc.to_dict())
         await ws_manager.broadcast_incident(new_inc.to_dict(), event_type="INCIDENT_UPDATE")
     except Exception as exc:
         logger.debug("Failed to broadcast new incident: %s", exc)
@@ -588,6 +589,7 @@ async def investigate_incident(
 
     try:
         from backend.core.websocket_manager import ws_manager
+        await ws_manager.broadcast_incident_updated(inc.to_dict())
         await ws_manager.broadcast_incident(inc.to_dict(), event_type="INCIDENT_UPDATE")
     except Exception as exc:
         logger.debug("Failed to broadcast investigated incident: %s", exc)
@@ -634,6 +636,7 @@ async def resolve_incident(
 
     try:
         from backend.core.websocket_manager import ws_manager
+        await ws_manager.broadcast_incident_resolved(inc.to_dict())
         await ws_manager.broadcast_incident(inc.to_dict(), event_type="INCIDENT_UPDATE")
     except Exception as exc:
         logger.debug("Failed to broadcast resolved incident: %s", exc)
@@ -679,6 +682,7 @@ async def close_incident(
 
     try:
         from backend.core.websocket_manager import ws_manager
+        await ws_manager.broadcast_incident_updated(inc.to_dict())
         await ws_manager.broadcast_incident(inc.to_dict(), event_type="INCIDENT_UPDATE")
     except Exception as exc:
         logger.debug("Failed to broadcast closed incident: %s", exc)
@@ -708,6 +712,7 @@ async def trigger_incident_rca(
 
     try:
         from backend.core.websocket_manager import ws_manager
+        await ws_manager.broadcast_incident_updated(inc.to_dict())
         await ws_manager.broadcast_incident(inc.to_dict(), event_type="INCIDENT_UPDATE")
     except Exception as exc:
         logger.debug("Failed to broadcast analyzed incident: %s", exc)
