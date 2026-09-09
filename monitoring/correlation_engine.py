@@ -12,38 +12,73 @@ import uuid
 
 logger = logging.getLogger("aegisops.monitoring.correlation_engine")
 
+# Metric aliases dictionary for normalizing user and system telemetry keys
+METRIC_ALIASES: Dict[str, str] = {
+    "cpu": "cpu_usage",
+    "cpu_percent": "cpu_usage",
+    "cpu_load": "cpu_usage",
+    "processor": "cpu_usage",
+    "memory": "memory_usage",
+    "ram": "memory_usage",
+    "mem": "memory_usage",
+    "db_connections": "database_connections",
+    "db_connection": "database_connections",
+    "db_conn": "database_connections",
+    "database_connection": "database_connections",
+    "connection_pool": "database_connections",
+    "api_latency": "api_latency",
+    "latency": "api_latency",
+    "response_time": "api_latency",
+    "latency_p99": "api_latency",
+    "p99_latency": "api_latency",
+    "http_500": "http_500_errors",
+    "http_500_error": "http_500_errors",
+    "http_500_errors": "http_500_errors",
+    "500_errors": "http_500_errors",
+    "500_error": "http_500_errors",
+    "http_5xx": "http_500_errors",
+    "error_rate": "http_500_errors",
+    "http_error_rate": "http_500_errors",
+    "disk": "disk_usage",
+    "disk_percent": "disk_usage",
+}
+
+
+def normalize_metric_name(metric: str) -> str:
+    """Normalizes raw metric names into standard snake_case tokens."""
+    m = str(metric).lower().strip().replace(" ", "_").replace("-", "_")
+    return METRIC_ALIASES.get(m, m)
+
+
 # Metric relationship knowledge base (deterministic affinity groups)
 # Metrics within the same cluster or linked clusters are semantically related.
 RELATED_METRIC_CLUSTERS: List[Set[str]] = [
-    # System Compute & Process
-    {"cpu", "cpu_usage", "memory", "memory_usage", "process_count", "thread_count", "load_average"},
-    # API & Web Performance (cascading with compute and database)
+    # Cascading Web API, Application Tier & Database Layer (CPU, DB, Latency, HTTP 500)
     {
-        "api_latency",
-        "latency",
-        "http_500_errors",
-        "http_5xx",
-        "http_error_rate",
-        "request_timeout",
-        "error_rate",
         "cpu_usage",
-        "cpu",
+        "memory_usage",
         "database_connections",
+        "api_latency",
+        "http_500_errors",
+        "request_timeout",
+        "slow_queries",
+        "db_latency",
+        "load_average",
+        "thread_count",
     },
+    # System Compute & Process
+    {"cpu_usage", "memory_usage", "process_count", "thread_count", "load_average"},
     # Database Layer
     {
         "database_connections",
-        "db_connections",
         "db_latency",
         "query_time",
         "slow_queries",
         "memory_usage",
-        "memory",
         "disk_usage",
-        "connection_pool",
     },
     # Storage & I/O
-    {"disk", "disk_usage", "disk_io", "disk_iops", "disk_free_gb", "disk_read", "disk_write"},
+    {"disk_usage", "disk_io", "disk_iops", "disk_free_gb", "disk_read", "disk_write"},
     # Network
     {"network_sent", "network_recv", "network_latency", "packet_drop", "connection_errors"},
 ]
@@ -51,12 +86,15 @@ RELATED_METRIC_CLUSTERS: List[Set[str]] = [
 
 def are_metrics_related(metric_a: str, metric_b: str) -> bool:
     """Checks whether two metrics belong to a shared operational relationship cluster."""
-    ma = metric_a.lower().strip()
-    mb = metric_b.lower().strip()
+    ma = normalize_metric_name(metric_a)
+    mb = normalize_metric_name(metric_b)
     if ma == mb:
         return True
 
     for cluster in RELATED_METRIC_CLUSTERS:
+        norm_cluster = {normalize_metric_name(item) for item in cluster}
+        if ma in norm_cluster and mb in norm_cluster:
+            return True
         if ma in cluster and mb in cluster:
             return True
     return False
@@ -74,12 +112,13 @@ def are_severities_related(severity_a: str, severity_b: str) -> bool:
 
     high_critical = {"CRITICAL", "HIGH"}
     warning_high = {"WARNING", "HIGH", "MEDIUM"}
+    operational_alarms = {"CRITICAL", "HIGH", "WARNING", "MEDIUM"}
 
     if sa in high_critical and sb in high_critical:
         return True
     if sa in warning_high and sb in warning_high:
         return True
-    if (sa == "CRITICAL" and sb == "WARNING") or (sa == "WARNING" and sb == "CRITICAL"):
+    if sa in operational_alarms and sb in operational_alarms:
         return True
 
     return False
@@ -175,8 +214,8 @@ class EventCorrelationEngine:
         }
 
         # 1. Same service correlation (+30)
-        alert_service = str(alert.get("service", "")).strip().lower()
-        inc_service = str(incident.service).strip().lower()
+        alert_service = str(alert.get("service", "")).strip().lower().replace("-", "_").replace(" ", "_")
+        inc_service = str(incident.service).strip().lower().replace("-", "_").replace(" ", "_")
         if alert_service and inc_service and alert_service == inc_service:
             breakdown["same_service"] = self.WEIGHT_SAME_SERVICE
 
@@ -265,9 +304,13 @@ class EventCorrelationEngine:
         """Synthesizes an intuitive human-readable incident title."""
         svc_name = service.replace("-", " ").replace("_", " ").title()
 
-        # Check domain-specific patterns
-        metric_set = {m.lower() for m in metrics}
-        if {"api_latency", "http_500_errors"}.issubset(metric_set):
+        # Check domain-specific patterns using normalized metrics
+        metric_set = {normalize_metric_name(m) for m in metrics}
+        if {"api_latency", "http_500_errors"}.issubset(metric_set) or (
+            "database_connections" in metric_set and ("api_latency" in metric_set or "http_500_errors" in metric_set)
+        ) or (
+            "cpu_usage" in metric_set and "database_connections" in metric_set
+        ):
             return f"{svc_name} degradation"
         elif "database_connections" in metric_set or "db_latency" in metric_set:
             return f"{svc_name} database contention & connection degradation"
@@ -286,10 +329,17 @@ class EventCorrelationEngine:
     def _infer_probable_cause(self, alerts: List[Dict[str, Any]]) -> str:
         """
         Infers the most probable root cause deterministically based on
-        chronological leading alert and severity.
+        chronological leading alert, resource saturation signatures, and severity.
         """
         if not alerts:
             return "Unknown root cause"
+
+        service = alerts[0].get("service", "service") if alerts else "service"
+        metric_names = {normalize_metric_name(a.get("metric", "")) for a in alerts}
+        if "database_connections" in metric_names and (
+            "api_latency" in metric_names or "http_500_errors" in metric_names or "cpu_usage" in metric_names
+        ):
+            return f"Resource saturation: Database connection pool exhaustion and cascading request contention on {service}"
 
         # Find earliest alert or highest severity alert
         sorted_by_time = sorted(

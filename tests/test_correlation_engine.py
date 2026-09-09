@@ -421,3 +421,42 @@ def test_incident_to_dict_serialization(engine):
     for field_name in required_fields:
         assert field_name in data
         assert data[field_name] is not None
+
+
+def test_day2_step3_payment_api_degradation_exact_scoring(engine):
+    """
+    Day 2 Step 3 exact verification:
+    Same service (+30), within 60s (+25), related metrics (+30), severity (+15) = 100
+    If score >= 60 -> ONE INCIDENT
+    Payment API: CPU=94%, DB Connections=96%, API Latency=2.8s, HTTP 500=HIGH
+    """
+    now = datetime.now(timezone.utc)
+    alerts = [
+        {"service": "Payment API", "metric": "CPU", "value": 94.0, "severity": "HIGH", "timestamp": now},
+        {"service": "Payment API", "metric": "DB Connections", "value": 96.0, "severity": "HIGH", "timestamp": now + timedelta(seconds=5)},
+        {"service": "Payment API", "metric": "API Latency", "value": 2.8, "severity": "HIGH", "timestamp": now + timedelta(seconds=12)},
+        {"service": "Payment API", "metric": "HTTP 500", "value": "HIGH", "severity": "HIGH", "timestamp": now + timedelta(seconds=20)},
+    ]
+
+    inc1, is_new1 = engine.process_alert(alerts[0])
+    assert is_new1 is True
+    master_id = inc1.id
+
+    for a in alerts[1:]:
+        score, breakdown = engine.calculate_correlation_score(a, inc1)
+        assert score == 100.0
+        assert breakdown["same_service"] == 30.0
+        assert breakdown["time_window"] == 25.0
+        assert breakdown["related_metrics"] == 30.0
+        assert breakdown["severity_relationship"] == 15.0
+        inc_merged, is_new = engine.process_alert(a)
+        assert is_new is False
+        assert inc_merged.id == master_id
+
+    assert len(engine.active_incidents) == 1
+    final = engine.active_incidents[master_id]
+    assert "Payment Api degradation" in final.title or "Payment API degradation" in final.title
+    assert final.correlation_score == 100.0
+    assert len(final.affected_events) == 4
+    assert len(final.affected_metrics) == 4
+
