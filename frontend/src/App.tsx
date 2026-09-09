@@ -8,6 +8,8 @@ import { RecentEventsTimeline } from './components/RecentEventsTimeline';
 import { SystemHealthIndicator } from './components/SystemHealthIndicator';
 import { ServicesCatalog } from './components/ServicesCatalog';
 import { IncidentDetailsModal } from './components/IncidentDetailsModal';
+import { SimulationControls } from './components/SimulationControls';
+import { SimulatedServicesGrid } from './components/SimulatedServicesGrid';
 import {
   fetchHealth,
   fetchCurrentMetrics,
@@ -17,6 +19,8 @@ import {
   fetchIncidentDetails,
   resolveIncident,
   triggerManualIncident,
+  fetchSimulationStatus,
+  setSimulationScenario,
 } from './services/api';
 import { MonitoringSocket } from './services/websocket';
 import {
@@ -25,6 +29,7 @@ import {
   HealthStatus,
   Incident,
   ServiceItem,
+  SimulatedService,
   SystemTelemetry,
   TimelineEvent,
   WebSocketEvent,
@@ -43,6 +48,8 @@ export const App: React.FC = () => {
   const [reconnectDelay, setReconnectDelay] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [toastNotice, setToastNotice] = useState<string | null>(null);
+  const [activeScenario, setActiveScenario] = useState<string>('NORMAL');
+  const [simulatedServices, setSimulatedServices] = useState<SimulatedService[]>([]);
 
   const socketRef = useRef<MonitoringSocket | null>(null);
 
@@ -212,6 +219,13 @@ export const App: React.FC = () => {
           break;
         }
 
+        case 'SIMULATION_UPDATE': {
+          const { scenario, snapshots } = event.data;
+          if (scenario) setActiveScenario(scenario);
+          if (snapshots) setSimulatedServices(snapshots);
+          break;
+        }
+
         default:
           break;
       }
@@ -223,12 +237,13 @@ export const App: React.FC = () => {
   const loadInitialData = useCallback(async () => {
     setLoading(true);
     try {
-      const [h, t, alts, svcs, incs] = await Promise.all([
+      const [h, t, alts, svcs, incs, simStatus] = await Promise.all([
         fetchHealth().catch(() => null),
         fetchCurrentMetrics().catch(() => null),
         fetchAlerts().catch(() => []),
         fetchServices().catch(() => []),
         fetchIncidents().catch(() => []),
+        fetchSimulationStatus().catch(() => null),
       ]);
 
       if (h) setHealth(h);
@@ -239,6 +254,10 @@ export const App: React.FC = () => {
       setAlerts(alts);
       setServices(svcs);
       setIncidents(incs);
+      if (simStatus) {
+        if (simStatus.active_scenario) setActiveScenario(simStatus.active_scenario);
+        if (simStatus.services) setSimulatedServices(simStatus.services);
+      }
 
       // Seed initial timeline events from recent incidents & alerts
       const initialEvents: TimelineEvent[] = [];
@@ -338,6 +357,25 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleSelectScenario = async (scenario: string) => {
+    setLoading(true);
+    try {
+      const res = await setSimulationScenario(scenario);
+      if (res && res.active_scenario) {
+        setActiveScenario(res.active_scenario);
+        if (res.services) setSimulatedServices(res.services);
+      }
+      setToastNotice(`🎯 Simulation Scenario Activated: ${scenario.replace(/_/g, ' ')}`);
+      // Reload alerts, incidents, and services immediately
+      await loadInitialData();
+    } catch (err) {
+      console.error('Error activating simulation scenario:', err);
+      setToastNotice('Failed to trigger simulation scenario');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 flex flex-col font-sans">
       {/* SECTION 1: Top Navigation (Logo, System Status, WebSocket Status) */}
@@ -369,6 +407,13 @@ export const App: React.FC = () => {
             </button>
           </div>
         )}
+
+        {/* DEMO / SIMULATION DRILL CONTROLS FOR PRESENTATION */}
+        <SimulationControls
+          activeScenario={activeScenario}
+          onSelectScenario={handleSelectScenario}
+          loading={loading}
+        />
 
         {/* SECTION 2: Summary Cards (Total Services, Healthy Services, Active Alerts, Active Incidents) */}
         <SummaryCards
@@ -403,6 +448,13 @@ export const App: React.FC = () => {
           onSelectIncident={handleSelectIncident}
           loading={loading}
         />
+
+        {/* DEMO / SIMULATION: Multi-Vector Simulated Microservices Grid */}
+        {simulatedServices.length > 0 && (
+          <SimulatedServicesGrid
+            services={simulatedServices}
+          />
+        )}
 
         {/* Monitored Services Catalog */}
         <ServicesCatalog

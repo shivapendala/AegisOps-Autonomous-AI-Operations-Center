@@ -111,3 +111,28 @@ export async function evaluateTelemetry(telemetry?: SystemTelemetry): Promise<An
   if (!res.ok) throw new Error(`AI evaluate failed: ${res.statusText}`);
   return res.json();
 }
+
+export async function fetchSimulationStatus(): Promise<any> {
+  const res = await fetch(`${API_BASE}/simulation/status`);
+  if (!res.ok) throw new Error(`Fetch simulation status failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function setSimulationScenario(scenario: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/simulation/scenario`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scenario }),
+  });
+  if (!res.ok) throw new Error(`Set simulation scenario failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function resetSimulation(): Promise<any> {
+  const res = await fetch(`${API_BASE}/simulation/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Reset simulation failed: ${res.statusText}`);
+  return res.json();
+}

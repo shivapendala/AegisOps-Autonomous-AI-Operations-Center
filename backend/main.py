@@ -16,6 +16,7 @@ from backend.core.logger import setup_logging
 from database.init_db import setup_and_seed
 
 from monitoring.service import MonitoringService
+from monitoring.simulation import simulation_engine
 
 logger = setup_logging(settings.LOG_LEVEL)
 
@@ -40,9 +41,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.error("Failed to start monitoring background engine: %s", exc)
 
+    # Launch simulation engine background runner
+    try:
+        await simulation_engine.start(interval_seconds=2.0)
+        logger.info("AegisOps Realistic Simulation Engine started (2.0s interval).")
+    except Exception as exc:
+        logger.error("Failed to start simulation engine: %s", exc)
+
     logger.info("AegisOps Backend is ready on http://%s:%s", settings.HOST, settings.PORT)
     yield
     logger.info("Shutting down AegisOps Backend gracefully...")
+    await simulation_engine.stop()
     await monitoring_service.stop()
 
 
