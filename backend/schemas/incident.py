@@ -18,6 +18,27 @@ class IncidentEventResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class IncidentRelatedAlertResponse(BaseModel):
+    id: int
+    alert_id: Optional[int] = None
+    event_id: Optional[int] = None
+    incident_id: str
+    service: Optional[str] = None
+    metric: Optional[str] = None
+    value: Optional[float] = None
+    threshold: Optional[float] = None
+    severity: Optional[str] = None
+    message: Optional[str] = None
+    status: Optional[str] = "ACTIVE"
+    source: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    event_type: Optional[str] = None
+    actor: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class IncidentBase(BaseModel):
     service_id: Optional[int] = None
     service: Optional[str] = None

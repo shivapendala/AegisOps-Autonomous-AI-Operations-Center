@@ -141,3 +141,87 @@ def test_post_alert_auto_correlates_incident(client, db_session):
     assert "DB Connections" in inc_data2["affected_metrics"]
     assert len(inc_data2["events"]) >= 2
 
+
+def test_step6_incident_apis(client, db_session):
+    """
+    STEP 6 Verification:
+    - GET /api/incidents (Returns all incidents)
+    - GET /api/incidents/{incident_id} (Returns complete incident: id, title, severity, status, correlation_score)
+    - GET /api/incidents/{incident_id}/events (Returns related alerts)
+    - GET /api/incidents/{incident_id}/recommendations (Returns recommended actions)
+    - POST /api/incidents/{incident_id}/investigate (Starts AI investigation)
+    - POST /api/incidents/{incident_id}/resolve (Resolves incident)
+    - POST /api/incidents/{incident_id}/close (Closes incident)
+    """
+    seed_initial_data(db_session)
+
+    # 1. GET /api/incidents
+    resp_list = client.get("/api/incidents")
+    assert resp_list.status_code == 200
+    incidents = resp_list.json()
+    assert isinstance(incidents, list)
+    assert len(incidents) >= 1
+
+    target_inc = incidents[0]
+    inc_id = target_inc["id"]
+
+    # 2. GET /api/incidents/{incident_id}
+    resp_single = client.get(f"/api/incidents/{inc_id}")
+    assert resp_single.status_code == 200
+    inc_data = resp_single.json()
+    assert inc_data["id"] == inc_id
+    assert "title" in inc_data
+    assert "severity" in inc_data
+    assert "status" in inc_data
+    assert "correlation_score" in inc_data
+    assert inc_data["status"] in ["OPEN", "INVESTIGATING", "RESOLVED", "CLOSED"]
+
+    # Test flexible ID lookup (e.g. stripped prefix or lowercase)
+    suffix = inc_id.replace("INC-", "")
+    resp_flexible = client.get(f"/api/incidents/{suffix}")
+    assert resp_flexible.status_code == 200
+    assert resp_flexible.json()["id"] == inc_id
+
+    # 3. GET /api/incidents/{incident_id}/events (Returns related alerts)
+    resp_events = client.get(f"/api/incidents/{inc_id}/events")
+    assert resp_events.status_code == 200
+    events_data = resp_events.json()
+    assert isinstance(events_data, list)
+    assert len(events_data) >= 1
+    alert_item = events_data[0]
+    assert "metric" in alert_item
+    assert "severity" in alert_item
+    assert "incident_id" in alert_item
+    assert alert_item["incident_id"] == inc_id
+
+    # 4. GET /api/incidents/{incident_id}/recommendations (Returns recommended actions)
+    resp_recs = client.get(f"/api/incidents/{inc_id}/recommendations")
+    assert resp_recs.status_code == 200
+    recs_data = resp_recs.json()
+    assert isinstance(recs_data, list)
+    assert len(recs_data) >= 1
+    rec_item = recs_data[0]
+    assert "action" in rec_item
+    assert "priority" in rec_item
+    assert "status" in rec_item
+
+    # 5. POST /api/incidents/{incident_id}/investigate (Starts AI investigation)
+    resp_inv = client.post(f"/api/incidents/{inc_id}/investigate")
+    assert resp_inv.status_code == 200
+    inv_data = resp_inv.json()
+    assert inv_data["status"] == "INVESTIGATING"
+
+    # 6. POST /api/incidents/{incident_id}/resolve (Resolves incident)
+    resp_res = client.post(f"/api/incidents/{inc_id}/resolve")
+    assert resp_res.status_code == 200
+    res_data = resp_res.json()
+    assert res_data["status"] == "RESOLVED"
+    assert res_data["resolved_at"] is not None
+
+    # 7. POST /api/incidents/{incident_id}/close (Closes incident)
+    resp_close = client.post(f"/api/incidents/{inc_id}/close")
+    assert resp_close.status_code == 200
+    close_data = resp_close.json()
+    assert close_data["status"] == "CLOSED"
+
+
