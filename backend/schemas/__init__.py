@@ -5,7 +5,13 @@ from .service import ServiceResponse, ServiceCreate, ServiceUpdate
 from .metric import MetricResponse, MetricCreate, SystemMetricsSummary
 from .alert import AlertResponse, AlertCreate, AlertUpdate
 from .incident import IncidentResponse, IncidentDetailResponse, IncidentCreate, IncidentResolveRequest
-from .recommendation import RecommendationResponse, RecommendationCreate
+from .recommendation import (
+    RecommendationResponse,
+    RecommendationCreate,
+    RecommendationApprovalRequest,
+    RecommendationRejectRequest,
+    RecommendationExecuteRequest,
+)
 
 __all__ = [
     "HealthResponse",
@@ -27,4 +33,7 @@ __all__ = [
     "IncidentResolveRequest",
     "RecommendationResponse",
     "RecommendationCreate",
+    "RecommendationApprovalRequest",
+    "RecommendationRejectRequest",
+    "RecommendationExecuteRequest",
 ]

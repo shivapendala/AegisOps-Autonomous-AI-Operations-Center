@@ -1,4 +1,4 @@
-﻿"""
+"""
 Pydantic schemas for Incident Management and Event Correlation.
 Re-exports core incident schemas and adds event correlation data models.
 """
@@ -21,6 +21,9 @@ from backend.schemas.recommendation import (
     RecommendationBase,
     RecommendationCreate,
     RecommendationResponse,
+    RecommendationApprovalRequest,
+    RecommendationRejectRequest,
+    RecommendationExecuteRequest,
 )
 
 
@@ -72,6 +75,9 @@ __all__ = [
     "RecommendationBase",
     "RecommendationCreate",
     "RecommendationResponse",
+    "RecommendationApprovalRequest",
+    "RecommendationRejectRequest",
+    "RecommendationExecuteRequest",
     "CorrelationScoreBreakdown",
     "CorrelatedAlertItem",
     "CorrelationGroupResult",

@@ -170,23 +170,46 @@ class IncidentInvestigator:
         inc.updated_at = now
 
         # Add or update IncidentRecommendationModel entries
-        for idx, act in enumerate(analysis.recommended_actions):
+        # IMPORTANT SAFETY RULE: All AI-generated recommendations start in status='PENDING'.
+        # AI should NOT automatically execute server commands.
+        action_items = getattr(analysis, "recommended_action_items", None)
+        if not action_items and analysis.recommended_actions:
+            action_items = [
+                {
+                    "action": str(act),
+                    "priority": "HIGH" if idx < 2 else "MEDIUM",
+                    "status": "PENDING",
+                    "description": str(act),
+                }
+                for idx, act in enumerate(analysis.recommended_actions)
+            ]
+
+        for idx, item in enumerate(action_items or []):
+            if isinstance(item, dict):
+                act_text = item.get("action") or str(item)
+                priority_val = item.get("priority", "HIGH" if idx < 2 else "MEDIUM")
+                desc_val = item.get("description", act_text)
+            else:
+                act_text = str(item)
+                priority_val = "HIGH" if idx < 2 else "MEDIUM"
+                desc_val = act_text
+
             existing_rec = (
                 db.query(IncidentRecommendationModel)
                 .filter(
                     IncidentRecommendationModel.incident_id == inc.id,
-                    IncidentRecommendationModel.action == str(act),
+                    IncidentRecommendationModel.action == act_text,
                 )
                 .first()
             )
             if not existing_rec:
                 rec = IncidentRecommendationModel(
                     incident_id=inc.id,
-                    action=str(act),
-                    priority="HIGH" if idx == 0 else "MEDIUM",
-                    status="PENDING",
-                    title=f"Remediation #{idx + 1}",
-                    description=str(act),
+                    action=act_text,
+                    priority=priority_val,
+                    status="PENDING",  # Strict Safety Guard: ALWAYS PENDING awaiting human operator review
+                    title=act_text,
+                    description=desc_val,
                     confidence=analysis.confidence_score,
                     generated_by=analysis.provider,
                 )

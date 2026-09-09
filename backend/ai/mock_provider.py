@@ -122,13 +122,33 @@ class MockAIProvider(AIProvider):
                 "Payment requests timed out",
                 "CPU increased after database saturation",
             ]
-            recommended_actions = [
-                "Increase database connection pool and investigate long-running queries.",
-                "Increase database connection pool maximum limit",
-                "Investigate long-running queries on payment database",
-                "Restart stale database connection worker pool",
-                "Enable query caching on payment transaction ledger",
+            recommended_action_items = [
+                {
+                    "action": "Check database connection pool",
+                    "priority": "HIGH",
+                    "status": "PENDING",
+                    "description": "Inspect PostgreSQL active connections, pg_stat_activity, and increase maximum pool size if saturated.",
+                },
+                {
+                    "action": "Inspect long-running queries",
+                    "priority": "HIGH",
+                    "status": "PENDING",
+                    "description": "Examine slow query logs and terminate or optimize unindexed queries holding table locks.",
+                },
+                {
+                    "action": "Check database CPU and memory",
+                    "priority": "MEDIUM",
+                    "status": "PENDING",
+                    "description": "Review host metrics for database instance to ensure sufficient CPU headroom and memory buffer.",
+                },
+                {
+                    "action": "Review recent Payment API deployments",
+                    "priority": "MEDIUM",
+                    "status": "PENDING",
+                    "description": "Audit recent service deployments and database migration commits on the Payment API.",
+                },
             ]
+            recommended_actions = [item["action"] for item in recommended_action_items]
             impact = f"{svc_str or 'Payment API'} requests are experiencing failures because database connections are saturated."
 
         # 2. High CPU Saturation
@@ -144,11 +164,27 @@ class MockAIProvider(AIProvider):
                 "Load average 3x above available CPU core count",
                 "Runaway process detected in worker container",
             ]
-            recommended_actions = [
-                "Profile top active worker PID CPU consumers",
-                "Scale out additional worker replicas (HPA trigger)",
-                "Throttle background batch ingestion pipelines",
+            recommended_action_items = [
+                {
+                    "action": "Profile top active worker PID CPU consumers",
+                    "priority": "HIGH",
+                    "status": "PENDING",
+                    "description": "Identify runaway compute threads in container",
+                },
+                {
+                    "action": "Scale out additional worker replicas (HPA trigger)",
+                    "priority": "HIGH",
+                    "status": "PENDING",
+                    "description": "Trigger horizontal autoscaling to distribute compute load",
+                },
+                {
+                    "action": "Throttle background batch ingestion pipelines",
+                    "priority": "MEDIUM",
+                    "status": "PENDING",
+                    "description": "Temporarily limit background worker throughput",
+                },
             ]
+            recommended_actions = [item["action"] for item in recommended_action_items]
             impact = "Elevated request queuing time and potential node eviction."
 
         # 3. Memory Leak / Exhaustion
@@ -163,11 +199,27 @@ class MockAIProvider(AIProvider):
                 "Memory consumption exceeded 85% allocated limit",
                 "Garbage collection pause times elevated",
             ]
-            recommended_actions = [
-                "Inspect memory heap profile for retain cycles or cache leaks",
-                "Gracefully restart worker instances exceeding RSS threshold",
-                "Purge expired in-memory cache partitions",
+            recommended_action_items = [
+                {
+                    "action": "Inspect memory heap profile for retain cycles or cache leaks",
+                    "priority": "HIGH",
+                    "status": "PENDING",
+                    "description": "Capture heap profile to locate memory leak suspects",
+                },
+                {
+                    "action": "Gracefully restart worker instances exceeding RSS threshold",
+                    "priority": "MEDIUM",
+                    "status": "PENDING",
+                    "description": "Execute rolling restart of degraded workers",
+                },
+                {
+                    "action": "Purge expired in-memory cache partitions",
+                    "priority": "LOW",
+                    "status": "PENDING",
+                    "description": "Flush stale cache keys to reclaim memory headroom",
+                },
             ]
+            recommended_actions = [item["action"] for item in recommended_action_items]
             impact = "Node stability threatened; high likelihood of abrupt OOMKill."
 
         # 4. Storage / Disk Volume Saturation
@@ -181,27 +233,59 @@ class MockAIProvider(AIProvider):
                 "Disk space utilization reached 92% on /var/log volume",
                 "I/O wait elevated due to disk write throttling",
             ]
-            recommended_actions = [
-                "Purge archived container logs older than retention policy",
-                "Remove dangling Docker images and build layers",
-                "Expand block volume storage partition",
+            recommended_action_items = [
+                {
+                    "action": "Purge archived container logs older than retention policy",
+                    "priority": "HIGH",
+                    "status": "PENDING",
+                    "description": "Remove logs older than 7 days from storage volume",
+                },
+                {
+                    "action": "Remove dangling Docker images and build layers",
+                    "priority": "MEDIUM",
+                    "status": "PENDING",
+                    "description": "Prune unused docker layers to recover disk space",
+                },
+                {
+                    "action": "Expand block volume storage partition",
+                    "priority": "LOW",
+                    "status": "PENDING",
+                    "description": "Provision additional block storage capacity",
+                },
             ]
+            recommended_actions = [item["action"] for item in recommended_action_items]
             impact = "Risk of read-only filesystem lock and service crash."
 
         # 5. Default Generic Anomaly
         else:
-            probable_cause = f"Multi-metric telemetry divergence on {service or 'system'}"
+            probable_cause = f"Multi-metric telemetry divergence on {service_lower or 'system'}"
             confidence = 0.85
             reasoning = "Operational anomalies detected across telemetry signals requiring operator triage."
             evidence = [
                 f"Incident triggered with {len(alerts)} correlated alerts",
                 f"Telemetry variance observed across {len(affected_metrics)} metrics",
             ]
-            recommended_actions = [
-                "Inspect recent application deployments and configuration diffs",
-                "Verify network latency and upstream service dependencies",
-                "Review application error logs for unhandled exceptions",
+            recommended_action_items = [
+                {
+                    "action": "Inspect recent application deployments and configuration diffs",
+                    "priority": "HIGH",
+                    "status": "PENDING",
+                    "description": "Audit deployment changelog for potential regressions",
+                },
+                {
+                    "action": "Verify network latency and upstream service dependencies",
+                    "priority": "MEDIUM",
+                    "status": "PENDING",
+                    "description": "Check ping and error rates to dependent microservices",
+                },
+                {
+                    "action": "Review application error logs for unhandled exceptions",
+                    "priority": "MEDIUM",
+                    "status": "PENDING",
+                    "description": "Search log aggregator for 5xx stack traces",
+                },
             ]
+            recommended_actions = [item["action"] for item in recommended_action_items]
             impact = "Degraded operational performance."
 
         return RootCauseAnalysisResult(
@@ -210,6 +294,7 @@ class MockAIProvider(AIProvider):
             reasoning_summary=reasoning,
             evidence=evidence,
             recommended_actions=recommended_actions,
+            recommended_action_items=recommended_action_items,
             impact_summary=impact,
             provider=self.provider_name,
             raw_response="Synthesized via AegisOps Deterministic Mock Operational Engine",

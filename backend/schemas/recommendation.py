@@ -20,6 +20,21 @@ class RecommendationCreate(RecommendationBase):
     pass
 
 
+class RecommendationApprovalRequest(BaseModel):
+    operator: str = "Operations-Operator"
+    notes: Optional[str] = "Approved by human operator"
+
+
+class RecommendationRejectRequest(BaseModel):
+    operator: str = "Operations-Operator"
+    reason: Optional[str] = "Rejected by human operator"
+
+
+class RecommendationExecuteRequest(BaseModel):
+    operator: str = "Operations-Operator"
+    execution_notes: Optional[str] = "Executed with human operator approval"
+
+
 class RecommendationResponse(RecommendationBase):
     id: int
     created_at: datetime
